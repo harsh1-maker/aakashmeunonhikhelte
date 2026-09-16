@@ -1,26 +1,10 @@
-/* =========================================
-   SUPABASE SETTINGS
-========================================= */
 
-/*
-   AFTER CREATING YOUR SUPABASE PROJECT:
-
-   Replace these two values.
-
-   Example:
-
-   const SUPABASE_URL =
-       "https://cumwoqdzpsidocqvulxd.supabase.co/rest/v1/";
-
-   const SUPABASE_KEY =
-       "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
-*/
 
 const SUPABASE_URL =
-    "PASTE_YOUR_SUPABASE_URL_HERE";
+    "https://cumwoqdzpsidocqvulxd.supabase.co/rest/v1/";
 
 const SUPABASE_KEY =
-    "PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE";
+    "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
 
 
 /* =========================================

@@ -1,5 +1,5 @@
 /* =========================================
-   SUPABASE SETTINGS
+   SUPABASE
 ========================================= */
 
 const SUPABASE_URL =
@@ -8,70 +8,60 @@ const SUPABASE_URL =
 const SUPABASE_KEY =
     "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
 
-
-/* =========================================
-   SUPABASE
-========================================= */
-
-const supabaseClient = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-);
+const supabaseClient =
+    window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+    );
 
 
 /* =========================================
    VARIABLES
 ========================================= */
 
-let roomCode = null;
+let roomCode = "";
 let playerId = crypto.randomUUID();
-let playerName = null;
+let playerName = "";
 let channel = null;
+let isHost = false;
 let players = [];
 
 
 /* =========================================
-   HELPERS
+   BASIC FUNCTIONS
 ========================================= */
 
-function $(id) {
-    return document.getElementById(id);
-}
-
-function showScreen(screenId) {
+function showScreen(id) {
     document.querySelectorAll(".screen").forEach(screen => {
         screen.classList.remove("active");
     });
 
-    const screen = $(screenId);
-
-    if (screen) {
-        screen.classList.add("active");
-    }
+    document.getElementById(id).classList.add("active");
 }
 
-function showToast(message) {
-    const toast = $("toast");
 
-    if (!toast) {
-        alert(message);
-        return;
-    }
+function toast(message) {
+    const box = document.getElementById("toast");
 
-    toast.textContent = message;
-    toast.classList.add("show");
+    box.textContent = message;
+    box.classList.add("show");
 
     setTimeout(() => {
-        toast.classList.remove("show");
+        box.classList.remove("show");
     }, 2500);
 }
 
+
 function generateRoomCode() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const characters =
+        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
     let code = "";
 
-    for (let i = 0; i < 5; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < 6; i++) {
+        code += characters[
+            Math.floor(Math.random() * characters.length)
+        ];
     }
 
     return code;
@@ -79,100 +69,22 @@ function generateRoomCode() {
 
 
 /* =========================================
-   SUPABASE ROOM CONNECTION
-========================================= */
-
-async function connectToRoom(code) {
-
-    roomCode = code.toUpperCase();
-
-    channel = supabaseClient.channel(
-        "uno-room-" + roomCode,
-        {
-            config: {
-                presence: {
-                    key: playerId
-                }
-            }
-        }
-    );
-
-    channel
-        .on(
-            "presence",
-            {
-                event: "sync"
-            },
-            () => {
-                updatePlayers();
-            }
-        )
-        .on(
-            "broadcast",
-            {
-                event: "player-joined"
-            },
-            ({ payload }) => {
-
-                if (!players.find(p => p.id === payload.id)) {
-                    players.push(payload);
-                    renderPlayers();
-                }
-            }
-        )
-        .on(
-            "broadcast",
-            {
-                event: "room-created"
-            },
-            ({ payload }) => {
-
-                if (payload.host !== playerId) {
-                    showToast(payload.name + " created the room");
-                }
-            }
-        );
-
-    const status = await channel.subscribe(async (status) => {
-
-        if (status === "SUBSCRIBED") {
-
-            await channel.track({
-                id: playerId,
-                name: playerName,
-                host: false
-            });
-
-            updatePlayers();
-
-            showScreen("lobby");
-            renderRoomCode();
-
-            showToast("Connected to room!");
-        }
-    });
-
-    return status;
-}
-
-
-/* =========================================
-   PLAYERS
+   UPDATE PLAYER LIST
 ========================================= */
 
 function updatePlayers() {
 
     if (!channel) return;
 
-    const state = channel.presenceState();
+    const presence = channel.presenceState();
 
     players = [];
 
-    Object.values(state).forEach(entries => {
+    Object.values(presence).forEach(list => {
 
-        entries.forEach(player => {
+        list.forEach(player => {
 
-            if (!players.find(p => p.id === player.id)) {
+            if (!players.some(p => p.id === player.id)) {
                 players.push(player);
             }
 
@@ -186,48 +98,30 @@ function updatePlayers() {
 
 function renderPlayers() {
 
-    const list =
-        $("playersList") ||
-        $("playerList") ||
-        $("lobbyPlayers");
+    const container =
+        document.getElementById("players");
 
-    if (!list) return;
+    const count =
+        document.getElementById("count");
 
-    list.innerHTML = "";
+    container.innerHTML = "";
+
+    count.textContent =
+        ` (${players.length}/6)`;
+
 
     players.forEach((player, index) => {
 
-        const div = document.createElement("div");
+        const div =
+            document.createElement("div");
 
         div.className = "player";
 
-        div.innerHTML = `
-            <span>${player.name || "Player"}</span>
-            ${index === 0 ? "<small>HOST</small>" : ""}
-        `;
+        div.textContent =
+            player.name +
+            (player.host ? " 👑" : "");
 
-        list.appendChild(div);
-    });
-}
-
-
-/* =========================================
-   ROOM CODE
-========================================= */
-
-function renderRoomCode() {
-
-    const elements = [
-        $("roomCode"),
-        $("roomCodeDisplay"),
-        $("lobbyCode")
-    ];
-
-    elements.forEach(element => {
-
-        if (element) {
-            element.textContent = roomCode;
-        }
+        container.appendChild(div);
 
     });
 }
@@ -239,65 +133,28 @@ function renderRoomCode() {
 
 async function createRoom() {
 
-    const nameInput =
-        $("playerName") ||
-        $("nameInput") ||
-        $("username");
-
-    if (!nameInput) {
-        showToast("Name input not found");
-        return;
-    }
-
-    playerName = nameInput.value.trim();
+    playerName =
+        document.getElementById("name")
+            .value
+            .trim();
 
     if (!playerName) {
-        showToast("Enter your name first!");
+        toast("Enter your name first!");
         return;
     }
 
     roomCode = generateRoomCode();
 
-    channel = supabaseClient.channel(
-        "uno-room-" + roomCode,
-        {
-            config: {
-                presence: {
-                    key: playerId
-                }
-            }
-        }
-    );
+    isHost = true;
 
-    channel
-        .on(
-            "presence",
-            {
-                event: "sync"
-            },
-            () => {
-                updatePlayers();
-            }
-        );
+    await connectRoom();
 
-    await channel.subscribe(async (status) => {
+    document.getElementById("roomCode")
+        .textContent = roomCode;
 
-        if (status === "SUBSCRIBED") {
+    showScreen("lobby");
 
-            await channel.track({
-                id: playerId,
-                name: playerName,
-                host: true
-            });
-
-            updatePlayers();
-
-            showScreen("lobby");
-            renderRoomCode();
-
-            showToast("Room created!");
-        }
-    });
+    toast("Room created!");
 }
 
 
@@ -307,35 +164,142 @@ async function createRoom() {
 
 async function joinRoom() {
 
-    const nameInput =
-        $("playerName") ||
-        $("nameInput") ||
-        $("username");
+    playerName =
+        document.getElementById("name")
+            .value
+            .trim();
 
-    const codeInput =
-        $("roomCodeInput") ||
-        $("joinCode") ||
-        $("roomInput");
-
-    if (!nameInput || !codeInput) {
-        showToast("Name or room code field not found");
-        return;
-    }
-
-    playerName = nameInput.value.trim();
-    const code = codeInput.value.trim();
+    roomCode =
+        document.getElementById("code")
+            .value
+            .trim()
+            .toUpperCase();
 
     if (!playerName) {
-        showToast("Enter your name first!");
+        toast("Enter your name first!");
         return;
     }
 
-    if (!code) {
-        showToast("Enter a room code!");
+    if (!roomCode) {
+        toast("Enter a room code!");
         return;
     }
 
-    await connectToRoom(code);
+    if (roomCode.length < 4) {
+        toast("Invalid room code!");
+        return;
+    }
+
+    isHost = false;
+
+    await connectRoom();
+
+    document.getElementById("roomCode")
+        .textContent = roomCode;
+
+    showScreen("lobby");
+
+    toast("Joined room!");
+}
+
+
+/* =========================================
+   CONNECT TO SUPABASE ROOM
+========================================= */
+
+async function connectRoom() {
+
+    if (channel) {
+        await supabaseClient.removeChannel(channel);
+    }
+
+    channel =
+        supabaseClient.channel(
+            "uno-room-" + roomCode,
+            {
+                config: {
+                    presence: {
+                        key: playerId
+                    }
+                }
+            }
+        );
+
+
+    channel.on(
+        "presence",
+        {
+            event: "sync"
+        },
+        () => {
+
+            updatePlayers();
+
+        }
+    );
+
+
+    channel.on(
+        "broadcast",
+        {
+            event: "start-game"
+        },
+        () => {
+
+            showScreen("game");
+
+            document.getElementById("turn")
+                .textContent = "Game started!";
+
+            toast("Game started!");
+
+        }
+    );
+
+
+    const result =
+        await channel.subscribe();
+
+
+    if (result !== "SUBSCRIBED") {
+
+        toast("Could not connect to room.");
+
+        return;
+    }
+
+
+    await channel.track({
+        id: playerId,
+        name: playerName,
+        host: isHost
+    });
+
+
+    updatePlayers();
+}
+
+
+/* =========================================
+   COPY ROOM CODE
+========================================= */
+
+async function copyRoom() {
+
+    if (!roomCode) return;
+
+    try {
+
+        await navigator.clipboard
+            .writeText(roomCode);
+
+        toast("Room code copied!");
+
+    } catch {
+
+        toast("Room code: " + roomCode);
+
+    }
 }
 
 
@@ -345,127 +309,170 @@ async function joinRoom() {
 
 async function startGame() {
 
-    if (!channel) {
-        showToast("Create or join a room first!");
+    if (!isHost) {
+
+        toast("Only the host can start the game.");
+
         return;
     }
+
 
     if (players.length < 2) {
-        showToast("Need at least 2 players!");
+
+        toast("Need at least 2 players!");
+
         return;
     }
 
+
+    if (players.length > 6) {
+
+        toast("Maximum 6 players!");
+
+        return;
+    }
+
+
     await channel.send({
+
         type: "broadcast",
-        event: "game-start",
+
+        event: "start-game",
+
         payload: {
             started: true
         }
+
     });
+
 
     showScreen("game");
 
-    showToast("Game started!");
+    document.getElementById("turn")
+        .textContent = "Game started!";
+
 }
 
 
 /* =========================================
-   COPY ROOM CODE
+   LEAVE ROOM
 ========================================= */
 
-async function copyRoomCode() {
+async function leaveRoom() {
 
-    if (!roomCode) return;
+    if (channel) {
 
-    try {
+        await supabaseClient
+            .removeChannel(channel);
 
-        await navigator.clipboard.writeText(roomCode);
-
-        showToast("Room code copied!");
-
-    } catch {
-
-        showToast(roomCode);
-
+        channel = null;
     }
+
+    roomCode = "";
+    players = [];
+    isHost = false;
+
+    document.getElementById("players")
+        .innerHTML = "";
+
+    document.getElementById("roomCode")
+        .textContent = "------";
+
+    showScreen("home");
+
+    toast("Left room.");
 }
 
 
 /* =========================================
-   BUTTON CONNECTIONS
+   GAME BUTTONS
 ========================================= */
 
-function setupButtons() {
+document.getElementById("draw")
+    .addEventListener("click", () => {
 
-    const createButtons = [
-        $("createRoom"),
-        $("createRoomBtn"),
-        $("createBtn")
-    ];
-
-    createButtons.forEach(button => {
-
-        if (button) {
-            button.addEventListener("click", createRoom);
-        }
+        toast("Draw card");
 
     });
 
 
-    const joinButtons = [
-        $("joinRoom"),
-        $("joinRoomBtn"),
-        $("joinBtn")
-    ];
+document.getElementById("uno")
+    .addEventListener("click", () => {
 
-    joinButtons.forEach(button => {
-
-        if (button) {
-            button.addEventListener("click", joinRoom);
-        }
+        toast("UNO!");
 
     });
-
-
-    const startButtons = [
-        $("startGame"),
-        $("startGameBtn"),
-        $("startBtn")
-    ];
-
-    startButtons.forEach(button => {
-
-        if (button) {
-            button.addEventListener("click", startGame);
-        }
-
-    });
-
-
-    const copyButtons = [
-        $("copyRoom"),
-        $("copyRoomBtn"),
-        $("copyBtn")
-    ];
-
-    copyButtons.forEach(button => {
-
-        if (button) {
-            button.addEventListener("click", copyRoomCode);
-        }
-
-    });
-}
 
 
 /* =========================================
-   STARTUP
+   BUTTONS
 ========================================= */
 
-document.addEventListener("DOMContentLoaded", () => {
+document.getElementById("create")
+    .addEventListener(
+        "click",
+        createRoom
+    );
 
-    setupButtons();
 
-    console.log("UNO Friends loaded successfully.");
+document.getElementById("join")
+    .addEventListener(
+        "click",
+        joinRoom
+    );
+
+
+document.getElementById("copy")
+    .addEventListener(
+        "click",
+        copyRoom
+    );
+
+
+document.getElementById("start")
+    .addEventListener(
+        "click",
+        startGame
+    );
+
+
+document.getElementById("leave")
+    .addEventListener(
+        "click",
+        leaveRoom
+    );
+
+
+/* =========================================
+   COLOR BUTTONS
+========================================= */
+
+document.querySelectorAll(
+    "[data-color]"
+).forEach(button => {
+
+    button.addEventListener(
+        "click",
+        () => {
+
+            const color =
+                button.dataset.color;
+
+            document.getElementById("color")
+                .textContent =
+                "Color: " + color;
+
+            document.getElementById("modal")
+                .classList.add("hidden");
+
+        }
+    );
 
 });
+
+
+/* =========================================
+   READY
+========================================= */
+
+console.log("UNO Friends loaded successfully.");

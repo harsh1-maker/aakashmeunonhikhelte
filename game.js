@@ -24,26 +24,33 @@ let playerId = crypto.randomUUID();
 let playerName = "";
 let channel = null;
 let isHost = false;
+
 let players = [];
 
 
 /* =========================================
-   BASIC FUNCTIONS
+   HELPERS
 ========================================= */
 
 function showScreen(id) {
-    document.querySelectorAll(".screen").forEach(screen => {
-        screen.classList.remove("active");
-    });
 
-    document.getElementById(id).classList.add("active");
+    document.querySelectorAll(".screen")
+        .forEach(screen => {
+            screen.classList.remove("active");
+        });
+
+    document.getElementById(id)
+        .classList.add("active");
 }
 
 
 function toast(message) {
-    const box = document.getElementById("toast");
+
+    const box =
+        document.getElementById("toast");
 
     box.textContent = message;
+
     box.classList.add("show");
 
     setTimeout(() => {
@@ -53,14 +60,15 @@ function toast(message) {
 
 
 function generateRoomCode() {
-    const characters =
+
+    const chars =
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     let code = "";
 
     for (let i = 0; i < 6; i++) {
-        code += characters[
-            Math.floor(Math.random() * characters.length)
+        code += chars[
+            Math.floor(Math.random() * chars.length)
         ];
     }
 
@@ -69,32 +77,51 @@ function generateRoomCode() {
 
 
 /* =========================================
-   UPDATE PLAYER LIST
+   ADD PLAYER
 ========================================= */
 
-function updatePlayers() {
+function addPlayer(player) {
 
-    if (!channel) return;
+    if (!player || !player.id) return;
 
-    const presence = channel.presenceState();
+    const existing =
+        players.find(p => p.id === player.id);
 
-    players = [];
+    if (!existing) {
 
-    Object.values(presence).forEach(list => {
-
-        list.forEach(player => {
-
-            if (!players.some(p => p.id === player.id)) {
-                players.push(player);
-            }
-
+        players.push({
+            id: player.id,
+            name: player.name,
+            host: player.host === true
         });
 
-    });
+    } else {
+
+        existing.name = player.name;
+        existing.host = player.host === true;
+
+    }
 
     renderPlayers();
 }
 
+
+/* =========================================
+   REMOVE PLAYER
+========================================= */
+
+function removePlayer(id) {
+
+    players =
+        players.filter(p => p.id !== id);
+
+    renderPlayers();
+}
+
+
+/* =========================================
+   RENDER PLAYERS
+========================================= */
 
 function renderPlayers() {
 
@@ -110,20 +137,35 @@ function renderPlayers() {
         ` (${players.length}/6)`;
 
 
-    players.forEach((player, index) => {
+    players.forEach(player => {
 
         const div =
             document.createElement("div");
 
         div.className = "player";
 
-        div.textContent =
-            player.name +
-            (player.host ? " 👑" : "");
+        div.innerHTML = `
+            <span>${player.name}</span>
+            ${player.host ? " 👑" : ""}
+        `;
 
         container.appendChild(div);
 
     });
+
+
+    /* Enable / disable START button */
+
+    const startButton =
+        document.getElementById("start");
+
+    if (isHost) {
+
+        startButton.disabled =
+            players.length < 2;
+
+    }
+
 }
 
 
@@ -139,15 +181,23 @@ async function createRoom() {
             .trim();
 
     if (!playerName) {
+
         toast("Enter your name first!");
+
         return;
     }
 
-    roomCode = generateRoomCode();
+
+    roomCode =
+        generateRoomCode();
 
     isHost = true;
 
+    players = [];
+
+
     await connectRoom();
+
 
     document.getElementById("roomCode")
         .textContent = roomCode;
@@ -155,6 +205,7 @@ async function createRoom() {
     showScreen("lobby");
 
     toast("Room created!");
+
 }
 
 
@@ -163,7 +214,6 @@ async function createRoom() {
 ========================================= */
 
 async function joinRoom() {
-   console.log("JOIN BUTTON CLICKED");
 
     playerName =
         document.getElementById("name")
@@ -176,24 +226,30 @@ async function joinRoom() {
             .trim()
             .toUpperCase();
 
+
     if (!playerName) {
+
         toast("Enter your name first!");
+
         return;
     }
+
 
     if (!roomCode) {
-        toast("Enter a room code!");
+
+        toast("Enter the room code!");
+
         return;
     }
 
-    if (roomCode.length < 4) {
-        toast("Invalid room code!");
-        return;
-    }
 
     isHost = false;
 
+    players = [];
+
+
     await connectRoom();
+
 
     document.getElementById("roomCode")
         .textContent = roomCode;
@@ -201,18 +257,23 @@ async function joinRoom() {
     showScreen("lobby");
 
     toast("Joined room!");
+
 }
 
 
 /* =========================================
-   CONNECT TO SUPABASE ROOM
+   CONNECT TO ROOM
 ========================================= */
 
 async function connectRoom() {
 
     if (channel) {
-        await supabaseClient.removeChannel(channel);
+
+        await supabaseClient
+            .removeChannel(channel);
+
     }
+
 
     channel =
         supabaseClient.channel(
@@ -227,6 +288,10 @@ async function connectRoom() {
         );
 
 
+    /* -------------------------
+       PRESENCE SYNC
+    ------------------------- */
+
     channel.on(
         "presence",
         {
@@ -234,11 +299,64 @@ async function connectRoom() {
         },
         () => {
 
-            updatePlayers();
+            const state =
+                channel.presenceState();
+
+            players = [];
+
+
+            Object.values(state)
+                .forEach(list => {
+
+                    list.forEach(player => {
+
+                        addPlayer(player);
+
+                    });
+
+                });
 
         }
     );
 
+
+    /* -------------------------
+       PLAYER JOINED
+    ------------------------- */
+
+    channel.on(
+        "broadcast",
+        {
+            event: "player-joined"
+        },
+        ({ payload }) => {
+
+            addPlayer(payload);
+
+        }
+    );
+
+
+    /* -------------------------
+       PLAYER LEFT
+    ------------------------- */
+
+    channel.on(
+        "broadcast",
+        {
+            event: "player-left"
+        },
+        ({ payload }) => {
+
+            removePlayer(payload.id);
+
+        }
+    );
+
+
+    /* -------------------------
+       GAME START
+    ------------------------- */
 
     channel.on(
         "broadcast",
@@ -250,57 +368,100 @@ async function connectRoom() {
             showScreen("game");
 
             document.getElementById("turn")
-                .textContent = "Game started!";
-
-            toast("Game started!");
+                .textContent =
+                "Game started!";
 
         }
     );
 
 
-    const result =
-        await channel.subscribe();
+    /* -------------------------
+       SUBSCRIBE
+    ------------------------- */
+
+    const status =
+        await new Promise(resolve => {
+
+            channel.subscribe(status => {
+
+                resolve(status);
+
+            });
+
+        });
 
 
-    if (result !== "SUBSCRIBED") {
+    if (status !== "SUBSCRIBED") {
 
-        toast("Could not connect to room.");
+        toast("Connection failed!");
+
+        console.error(
+            "Supabase connection:",
+            status
+        );
 
         return;
+
     }
 
 
-    await channel.track({
+    /* -------------------------
+       ADD OURSELVES
+    ------------------------- */
+
+    const me = {
+
         id: playerId,
+
         name: playerName,
+
         host: isHost
+
+    };
+
+
+    addPlayer(me);
+
+
+    /* -------------------------
+       SUPABASE PRESENCE
+    ------------------------- */
+
+    await channel.track(me);
+
+
+    /* -------------------------
+       TELL EVERYONE
+    ------------------------- */
+
+    await channel.send({
+
+        type: "broadcast",
+
+        event: "player-joined",
+
+        payload: me
+
     });
 
 
-    updatePlayers();
-}
+    /* -------------------------
+       ASK EXISTING PLAYERS
+    ------------------------- */
+
+    await channel.send({
+
+        type: "broadcast",
+
+        event: "player-joined",
+
+        payload: me
+
+    });
 
 
-/* =========================================
-   COPY ROOM CODE
-========================================= */
+    renderPlayers();
 
-async function copyRoom() {
-
-    if (!roomCode) return;
-
-    try {
-
-        await navigator.clipboard
-            .writeText(roomCode);
-
-        toast("Room code copied!");
-
-    } catch {
-
-        toast("Room code: " + roomCode);
-
-    }
 }
 
 
@@ -312,7 +473,9 @@ async function startGame() {
 
     if (!isHost) {
 
-        toast("Only the host can start the game.");
+        toast(
+            "Only the host can start the game."
+        );
 
         return;
     }
@@ -320,7 +483,9 @@ async function startGame() {
 
     if (players.length < 2) {
 
-        toast("Need at least 2 players!");
+        toast(
+            "You need at least 2 players!"
+        );
 
         return;
     }
@@ -328,7 +493,9 @@ async function startGame() {
 
     if (players.length > 6) {
 
-        toast("Maximum 6 players!");
+        toast(
+            "Maximum 6 players!"
+        );
 
         return;
     }
@@ -349,8 +516,36 @@ async function startGame() {
 
     showScreen("game");
 
+
     document.getElementById("turn")
-        .textContent = "Game started!";
+        .textContent =
+        "Game started!";
+
+}
+
+
+/* =========================================
+   COPY ROOM CODE
+========================================= */
+
+async function copyRoom() {
+
+    if (!roomCode) return;
+
+    try {
+
+        await navigator.clipboard
+            .writeText(roomCode);
+
+        toast("Room code copied!");
+
+    } catch {
+
+        toast(
+            "Room code: " + roomCode
+        );
+
+    }
 
 }
 
@@ -363,15 +558,33 @@ async function leaveRoom() {
 
     if (channel) {
 
+        await channel.send({
+
+            type: "broadcast",
+
+            event: "player-left",
+
+            payload: {
+                id: playerId
+            }
+
+        });
+
+
         await supabaseClient
             .removeChannel(channel);
 
         channel = null;
+
     }
 
+
     roomCode = "";
+
     players = [];
+
     isHost = false;
+
 
     document.getElementById("players")
         .innerHTML = "";
@@ -379,34 +592,44 @@ async function leaveRoom() {
     document.getElementById("roomCode")
         .textContent = "------";
 
+
     showScreen("home");
 
-    toast("Left room.");
 }
 
 
 /* =========================================
-   GAME BUTTONS
+   DRAW CARD
 ========================================= */
 
 document.getElementById("draw")
-    .addEventListener("click", () => {
+    .addEventListener(
+        "click",
+        () => {
 
-        toast("Draw card");
+            toast("Draw card");
 
-    });
-
-
-document.getElementById("uno")
-    .addEventListener("click", () => {
-
-        toast("UNO!");
-
-    });
+        }
+    );
 
 
 /* =========================================
-   BUTTONS
+   UNO BUTTON
+========================================= */
+
+document.getElementById("uno")
+    .addEventListener(
+        "click",
+        () => {
+
+            toast("UNO!");
+
+        }
+    );
+
+
+/* =========================================
+   CREATE
 ========================================= */
 
 document.getElementById("create")
@@ -416,12 +639,20 @@ document.getElementById("create")
     );
 
 
+/* =========================================
+   JOIN
+========================================= */
+
 document.getElementById("join")
     .addEventListener(
         "click",
         joinRoom
     );
 
+
+/* =========================================
+   COPY
+========================================= */
 
 document.getElementById("copy")
     .addEventListener(
@@ -430,12 +661,20 @@ document.getElementById("copy")
     );
 
 
+/* =========================================
+   START
+========================================= */
+
 document.getElementById("start")
     .addEventListener(
         "click",
         startGame
     );
 
+
+/* =========================================
+   LEAVE
+========================================= */
 
 document.getElementById("leave")
     .addEventListener(
@@ -445,7 +684,7 @@ document.getElementById("leave")
 
 
 /* =========================================
-   COLOR BUTTONS
+   COLOR PICKER
 ========================================= */
 
 document.querySelectorAll(
@@ -476,4 +715,6 @@ document.querySelectorAll(
    READY
 ========================================= */
 
-console.log("UNO Friends loaded successfully.");
+console.log(
+    "UNO Friends multiplayer loaded."
+);

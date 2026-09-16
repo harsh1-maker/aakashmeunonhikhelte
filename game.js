@@ -16,18 +16,20 @@ const supabaseClient =
 
 
 /* =========================================
-   VARIABLES
+   PLAYER
 ========================================= */
 
-let roomCode = "";
 let playerId = crypto.randomUUID();
 let playerName = "";
+let roomCode = "";
 let isHost = false;
+
 let pollTimer = null;
+let gameTimer = null;
 
 
 /* =========================================
-   HELPERS
+   SCREEN
 ========================================= */
 
 function showScreen(id) {
@@ -37,10 +39,18 @@ function showScreen(id) {
             screen.classList.remove("active");
         });
 
-    document.getElementById(id)
-        .classList.add("active");
+    const screen =
+        document.getElementById(id);
+
+    if (screen) {
+        screen.classList.add("active");
+    }
 }
 
+
+/* =========================================
+   TOAST
+========================================= */
 
 function toast(message) {
 
@@ -48,6 +58,7 @@ function toast(message) {
         document.getElementById("toast");
 
     box.textContent = message;
+
     box.classList.add("show");
 
     setTimeout(() => {
@@ -55,6 +66,10 @@ function toast(message) {
     }, 2500);
 }
 
+
+/* =========================================
+   ROOM CODE
+========================================= */
 
 function generateRoomCode() {
 
@@ -78,20 +93,43 @@ function generateRoomCode() {
 
 
 /* =========================================
-   GET PLAYERS
+   LOAD ROOM
 ========================================= */
 
-async function startGame() {
+async function loadRoom() {
 
-    if (!isHost) {
+    if (!roomCode) return null;
 
-        toast("Only the host can start.");
+    const { data, error } =
+        await supabaseClient
+            .from("rooms")
+            .select("*")
+            .eq("code", roomCode)
+            .maybeSingle();
 
-        return;
+    if (error) {
+
+        console.error(
+            "Room error:",
+            error
+        );
+
+        return null;
     }
 
+    return data;
+}
 
-    const { data: players, error } =
+
+/* =========================================
+   LOAD PLAYERS
+========================================= */
+
+async function loadPlayers() {
+
+    if (!roomCode) return [];
+
+    const { data, error } =
         await supabaseClient
             .from("players")
             .select("*")
@@ -100,76 +138,24 @@ async function startGame() {
                 ascending: true
             });
 
-
     if (error) {
 
-        console.error(error);
+        console.error(
+            "Players error:",
+            error
+        );
 
-        toast("Could not start game.");
-
-        return;
+        return [];
     }
-
-
-    if (!players || players.length < 2) {
-
-        toast("Need at least 2 players!");
-
-        return;
-    }
-
-
-    if (players.length > 6) {
-
-        toast("Maximum 6 players!");
-
-        return;
-    }
-
-
-    /* Tell Supabase that the game has started */
-
-    const { error: updateError } =
-        await supabaseClient
-            .from("rooms")
-            .update({
-                game_started: true
-            })
-            .eq("code", roomCode);
-
-
-    if (updateError) {
-
-        console.error(updateError);
-
-        toast("Could not start game.");
-
-        return;
-    }
-
-
-    stopPolling();
-
-    showScreen("game");
-
-    document.getElementById("turn")
-        .textContent = "Game started!";
-
-    document.getElementById("color")
-        .textContent = "Color: -";
-
-    toast("Game started!");
-}
-
-  
-
 
     renderPlayers(data || []);
+
+    return data || [];
 }
 
 
 /* =========================================
-   DISPLAY PLAYERS
+   RENDER PLAYERS
 ========================================= */
 
 function renderPlayers(players) {
@@ -180,7 +166,12 @@ function renderPlayers(players) {
     const count =
         document.getElementById("count");
 
+    const startButton =
+        document.getElementById("start");
+
+
     container.innerHTML = "";
+
 
     count.textContent =
         ` (${players.length}/6)`;
@@ -193,25 +184,41 @@ function renderPlayers(players) {
 
         div.className = "player";
 
-        div.innerHTML = `
-            <span>${escapeHtml(player.name)}</span>
-            ${player.is_host ? " 👑" : ""}
-        `;
+
+        const name =
+            document.createElement("span");
+
+        name.textContent =
+            player.name;
+
+
+        const host =
+            document.createElement("span");
+
+        host.textContent =
+            player.is_host
+                ? " 👑"
+                : "";
+
+
+        div.appendChild(name);
+        div.appendChild(host);
 
         container.appendChild(div);
 
     });
 
 
-    /* START BUTTON */
-
-    const startButton =
-        document.getElementById("start");
+    /* Host controls START button */
 
     if (isHost) {
 
         startButton.disabled =
             players.length < 2;
+
+    } else {
+
+        startButton.disabled = true;
 
     }
 
@@ -219,17 +226,75 @@ function renderPlayers(players) {
 
 
 /* =========================================
-   SAFE TEXT
+   START LOBBY WATCHER
 ========================================= */
 
-function escapeHtml(text) {
+function startWatching() {
 
-    const div =
-        document.createElement("div");
+    stopWatching();
 
-    div.textContent = text;
 
-    return div.innerHTML;
+    /* Update players every second */
+
+    pollTimer =
+        setInterval(async () => {
+
+            const players =
+                await loadPlayers();
+
+
+            const room =
+                await loadRoom();
+
+
+            if (!room) return;
+
+
+            /* If host started the game,
+               every device enters game */
+
+            if (
+                room.game_started === true &&
+                !document
+                    .getElementById("game")
+                    .classList
+                    .contains("active")
+            ) {
+
+                stopWatching();
+
+                showScreen("game");
+
+                document.getElementById("turn")
+                    .textContent =
+                    "Game started!";
+
+                document.getElementById("color")
+                    .textContent =
+                    "Color: -";
+
+            }
+
+        }, 1000);
+
+
+    /* Load immediately */
+
+    loadPlayers();
+
+}
+
+
+function stopWatching() {
+
+    if (pollTimer) {
+
+        clearInterval(pollTimer);
+
+        pollTimer = null;
+
+    }
+
 }
 
 
@@ -238,6 +303,10 @@ function escapeHtml(text) {
 ========================================= */
 
 async function createRoom() {
+
+    playerId =
+        crypto.randomUUID();
+
 
     playerName =
         document.getElementById("name")
@@ -255,51 +324,45 @@ async function createRoom() {
     }
 
 
-    /* Generate room code */
+    /* Generate unique room */
 
-    roomCode =
-        generateRoomCode();
-
-
-    /* Create room */
-
-    const { error: roomError } =
-        await supabaseClient
-            .from("rooms")
-            .insert({
-                code: roomCode
-            });
+    let created = false;
 
 
-    if (roomError) {
-
-        console.error(roomError);
-
-        /* Try another code if collision */
+    for (let i = 0; i < 5; i++) {
 
         roomCode =
             generateRoomCode();
 
-        const retry =
+
+        const { error } =
             await supabaseClient
                 .from("rooms")
                 .insert({
-                    code: roomCode
+                    code: roomCode,
+                    game_started: false
                 });
 
-        if (retry.error) {
 
-            toast(
-                "Could not create room."
-            );
+        if (!error) {
 
-            return;
+            created = true;
+
+            break;
+
         }
 
     }
 
 
-    isHost = true;
+    if (!created) {
+
+        toast(
+            "Could not create room."
+        );
+
+        return;
+    }
 
 
     /* Add host */
@@ -322,14 +385,19 @@ async function createRoom() {
 
     if (playerError) {
 
-        console.error(playerError);
+        console.error(
+            playerError
+        );
 
         toast(
-            "Could not add you to room."
+            "Could not add host."
         );
 
         return;
     }
+
+
+    isHost = true;
 
 
     document.getElementById("roomCode")
@@ -339,12 +407,13 @@ async function createRoom() {
     showScreen("lobby");
 
 
-    startPolling();
+    startWatching();
 
 
     toast(
         "Room created!"
     );
+
 }
 
 
@@ -353,6 +422,10 @@ async function createRoom() {
 ========================================= */
 
 async function joinRoom() {
+
+    playerId =
+        crypto.randomUUID();
+
 
     playerName =
         document.getElementById("name")
@@ -380,7 +453,7 @@ async function joinRoom() {
     if (!roomCode) {
 
         toast(
-            "Enter the room code!"
+            "Enter room code!"
         );
 
         return;
@@ -389,37 +462,31 @@ async function joinRoom() {
 
     /* Check room */
 
-    const { data: room, error } =
-        await supabaseClient
-            .from("rooms")
-            .select("code")
-            .eq("code", roomCode)
-            .maybeSingle();
-
-
-    if (error) {
-
-        console.error(error);
-
-        toast(
-            "Could not check room."
-        );
-
-        return;
-    }
+    const room =
+        await loadRoom();
 
 
     if (!room) {
 
         toast(
-            "Room does not exist."
+            "Room does not exist!"
         );
 
         return;
     }
 
 
-    /* Check player count */
+    if (room.game_started) {
+
+        toast(
+            "Game already started!"
+        );
+
+        return;
+    }
+
+
+    /* Check number of players */
 
     const { count, error: countError } =
         await supabaseClient
@@ -439,10 +506,12 @@ async function joinRoom() {
 
     if (countError) {
 
-        console.error(countError);
+        console.error(
+            countError
+        );
 
         toast(
-            "Could not check players."
+            "Could not check room."
         );
 
         return;
@@ -461,7 +530,7 @@ async function joinRoom() {
 
     /* Add player */
 
-    const { error: joinError } =
+    const { error } =
         await supabaseClient
             .from("players")
             .insert({
@@ -477,9 +546,12 @@ async function joinRoom() {
             });
 
 
-    if (joinError) {
+    if (error) {
 
-        console.error(joinError);
+        console.error(
+            "JOIN ERROR:",
+            error
+        );
 
         toast(
             "Could not join room."
@@ -499,47 +571,13 @@ async function joinRoom() {
     showScreen("lobby");
 
 
-    startPolling();
+    startWatching();
 
 
     toast(
         "Joined room!"
     );
-}
 
-
-/* =========================================
-   LIVE PLAYER UPDATES
-========================================= */
-
-function startPolling() {
-
-    stopPolling();
-
-    loadPlayers();
-
-    /*
-       Check every second.
-       This makes the lobby update
-       even if Realtime is unavailable.
-    */
-
-    pollTimer =
-        setInterval(
-            loadPlayers,
-            1000
-        );
-}
-
-
-function stopPolling() {
-
-    if (pollTimer) {
-
-        clearInterval(pollTimer);
-
-        pollTimer = null;
-    }
 }
 
 
@@ -559,35 +597,11 @@ async function startGame() {
     }
 
 
-    const { data: players, error } =
-        await supabaseClient
-            .from("players")
-            .select("*")
-            .eq(
-                "room_code",
-                roomCode
-            )
-            .order(
-                "joined_at",
-                {
-                    ascending: true
-                }
-            );
+    const players =
+        await loadPlayers();
 
 
-    if (error) {
-
-        console.error(error);
-
-        toast(
-            "Could not start game."
-        );
-
-        return;
-    }
-
-
-    if (!players || players.length < 2) {
+    if (players.length < 2) {
 
         toast(
             "Need at least 2 players!"
@@ -607,12 +621,37 @@ async function startGame() {
     }
 
 
-    /*
-       For now this starts the game screen.
-       We'll add the actual UNO engine next.
-    */
+    /* Update database */
 
-    stopPolling();
+    const { error } =
+        await supabaseClient
+            .from("rooms")
+            .update({
+                game_started: true
+            })
+            .eq(
+                "code",
+                roomCode
+            );
+
+
+    if (error) {
+
+        console.error(
+            "START ERROR:",
+            error
+        );
+
+        toast(
+            "Could not start game."
+        );
+
+        return;
+    }
+
+
+    stopWatching();
+
 
     showScreen("game");
 
@@ -630,11 +669,12 @@ async function startGame() {
     toast(
         "Game started!"
     );
+
 }
 
 
 /* =========================================
-   COPY ROOM CODE
+   COPY CODE
 ========================================= */
 
 async function copyRoom() {
@@ -654,10 +694,11 @@ async function copyRoom() {
     } catch {
 
         toast(
-            "Room code: " + roomCode
+            roomCode
         );
 
     }
+
 }
 
 
@@ -667,10 +708,10 @@ async function copyRoom() {
 
 async function leaveRoom() {
 
-    stopPolling();
+    stopWatching();
 
 
-    if (roomCode) {
+    if (roomCode && playerId) {
 
         await supabaseClient
             .from("players")
@@ -704,7 +745,7 @@ async function leaveRoom() {
 
 
 /* =========================================
-   DRAW
+   DRAW BUTTON
 ========================================= */
 
 document.getElementById("draw")
@@ -713,7 +754,7 @@ document.getElementById("draw")
         () => {
 
             toast(
-                "UNO game engine coming next."
+                "UNO engine will be added next."
             );
 
         }
@@ -721,7 +762,7 @@ document.getElementById("draw")
 
 
 /* =========================================
-   UNO
+   UNO BUTTON
 ========================================= */
 
 document.getElementById("uno")
@@ -736,7 +777,7 @@ document.getElementById("uno")
 
 
 /* =========================================
-   BUTTONS
+   HOME BUTTONS
 ========================================= */
 
 document.getElementById("create")
@@ -752,6 +793,10 @@ document.getElementById("join")
         joinRoom
     );
 
+
+/* =========================================
+   LOBBY BUTTONS
+========================================= */
 
 document.getElementById("copy")
     .addEventListener(
@@ -775,7 +820,7 @@ document.getElementById("leave")
 
 
 /* =========================================
-   COLOR PICKER
+   COLOR BUTTONS
 ========================================= */
 
 document.querySelectorAll(

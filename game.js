@@ -1,7 +1,7 @@
 
 
 const SUPABASE_URL =
-    "https://cumwoqdzpsidocqvulxd.supabase.co/rest/v1/";
+    "https://cumwoqdzpsidocqvulxd.supabase.co/";
 
 const SUPABASE_KEY =
     "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>UNO Friends</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+
+<!-- HOME -->
+
+<section id="home" class="screen active">
+
+    <div class="logo">UNO</div>
+
+    <p class="subtitle">
+        Play privately with your friends
+    </p>
+
+    <input
+        id="name"
+        maxlength="15"
+        placeholder="Enter your name"
+    >
+
+    <button id="create">
+        CREATE ROOM
+    </button>
+
+    <div class="or">OR</div>
+
+    <input
+        id="code"
+        maxlength="6"
+        placeholder="Enter room code"
+    >
+
+    <button id="join" class="dark">
+        JOIN ROOM
+    </button>
+
+</section>
+
+
+<!-- LOBBY -->
+
+<section id="lobby" class="screen">
+
+    <div class="panel">
+
+        <h1>Private Room</h1>
+
+        <p class="muted">
+            Share this code with your friends
+        </p>
+
+        <div id="roomCode" class="room-code">
+            ------
+        </div>
+
+        <button id="copy" class="dark">
+            COPY ROOM CODE
+        </button>
+
+        <h3>
+            Players
+            <span id="count"></span>
+        </h3>
+
+        <div id="players"></div>
+
+        <button id="start">
+            START GAME
+        </button>
+
+        <button id="leave" class="dark">
+            LEAVE ROOM
+        </button>
+
+    </div>
+
+</section>
+
+
+<!-- GAME -->
+
+<section id="game" class="screen game">
+
+    <header>
+
+        <strong class="small-logo">
+            UNO
+        </strong>
+
+        <div id="turn">
+            Waiting...
+        </div>
+
+        <div id="color">
+            Color: -
+        </div>
+
+    </header>
+
+
+    <!-- PLAYERS -->
+
+    <div id="opponents"></div>
+
+
+    <!-- TABLE -->
+
+    <main class="table">
+
+        <button id="drawPile" class="card back">
+            UNO
+        </button>
+
+        <div id="topCard" class="card">
+            ?
+        </div>
+
+    </main>
+
+
+    <!-- YOUR HAND -->
+
+    <div class="my-area">
+
+        <div id="hand" class="hand"></div>
+
+        <div class="actions">
+
+            <button id="draw">
+                DRAW CARD
+            </button>
+
+            <button id="uno">
+                UNO!
+            </button>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- COLOR PICKER -->
+
+<div id="modal" class="modal hidden">
+
+    <div class="modal-box">
+
+        <h2>Choose a color</h2>
+
+        <button data-color="red">
+            RED
+        </button>
+
+        <button data-color="yellow">
+            YELLOW
+        </button>
+
+        <button data-color="green">
+            GREEN
+        </button>
+
+        <button data-color="blue">
+            BLUE
+        </button>
+
+    </div>
+
+</div>
+
+
+<!-- MESSAGE -->
+
+<div id="toast" class="toast"></div>
+
+
+<script src="game.js"></script>
+
+</body>
+</html>

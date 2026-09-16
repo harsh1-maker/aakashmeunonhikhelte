@@ -81,11 +81,17 @@ function generateRoomCode() {
    GET PLAYERS
 ========================================= */
 
-async function loadPlayers() {
+async function startGame() {
 
-    if (!roomCode) return;
+    if (!isHost) {
 
-    const { data, error } =
+        toast("Only the host can start.");
+
+        return;
+    }
+
+
+    const { data: players, error } =
         await supabaseClient
             .from("players")
             .select("*")
@@ -94,17 +100,68 @@ async function loadPlayers() {
                 ascending: true
             });
 
+
     if (error) {
 
-        console.error(
-            "Players error:",
-            error
-        );
+        console.error(error);
 
-        toast("Could not load players.");
+        toast("Could not start game.");
 
         return;
     }
+
+
+    if (!players || players.length < 2) {
+
+        toast("Need at least 2 players!");
+
+        return;
+    }
+
+
+    if (players.length > 6) {
+
+        toast("Maximum 6 players!");
+
+        return;
+    }
+
+
+    /* Tell Supabase that the game has started */
+
+    const { error: updateError } =
+        await supabaseClient
+            .from("rooms")
+            .update({
+                game_started: true
+            })
+            .eq("code", roomCode);
+
+
+    if (updateError) {
+
+        console.error(updateError);
+
+        toast("Could not start game.");
+
+        return;
+    }
+
+
+    stopPolling();
+
+    showScreen("game");
+
+    document.getElementById("turn")
+        .textContent = "Game started!";
+
+    document.getElementById("color")
+        .textContent = "Color: -";
+
+    toast("Game started!");
+}
+
+  
 
 
     renderPlayers(data || []);

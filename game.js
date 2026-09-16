@@ -22,10 +22,8 @@ const supabaseClient =
 let roomCode = "";
 let playerId = crypto.randomUUID();
 let playerName = "";
-let channel = null;
 let isHost = false;
-
-let players = [];
+let pollTimer = null;
 
 
 /* =========================================
@@ -50,7 +48,6 @@ function toast(message) {
         document.getElementById("toast");
 
     box.textContent = message;
-
     box.classList.add("show");
 
     setTimeout(() => {
@@ -67,9 +64,13 @@ function generateRoomCode() {
     let code = "";
 
     for (let i = 0; i < 6; i++) {
+
         code += chars[
-            Math.floor(Math.random() * chars.length)
+            Math.floor(
+                Math.random() * chars.length
+            )
         ];
+
     }
 
     return code;
@@ -77,53 +78,44 @@ function generateRoomCode() {
 
 
 /* =========================================
-   ADD PLAYER
+   GET PLAYERS
 ========================================= */
 
-function addPlayer(player) {
+async function loadPlayers() {
 
-    if (!player || !player.id) return;
+    if (!roomCode) return;
 
-    const existing =
-        players.find(p => p.id === player.id);
+    const { data, error } =
+        await supabaseClient
+            .from("players")
+            .select("*")
+            .eq("room_code", roomCode)
+            .order("joined_at", {
+                ascending: true
+            });
 
-    if (!existing) {
+    if (error) {
 
-        players.push({
-            id: player.id,
-            name: player.name,
-            host: player.host === true
-        });
+        console.error(
+            "Players error:",
+            error
+        );
 
-    } else {
+        toast("Could not load players.");
 
-        existing.name = player.name;
-        existing.host = player.host === true;
-
+        return;
     }
 
-    renderPlayers();
+
+    renderPlayers(data || []);
 }
 
 
 /* =========================================
-   REMOVE PLAYER
+   DISPLAY PLAYERS
 ========================================= */
 
-function removePlayer(id) {
-
-    players =
-        players.filter(p => p.id !== id);
-
-    renderPlayers();
-}
-
-
-/* =========================================
-   RENDER PLAYERS
-========================================= */
-
-function renderPlayers() {
+function renderPlayers(players) {
 
     const container =
         document.getElementById("players");
@@ -145,8 +137,8 @@ function renderPlayers() {
         div.className = "player";
 
         div.innerHTML = `
-            <span>${player.name}</span>
-            ${player.host ? " 👑" : ""}
+            <span>${escapeHtml(player.name)}</span>
+            ${player.is_host ? " 👑" : ""}
         `;
 
         container.appendChild(div);
@@ -154,7 +146,7 @@ function renderPlayers() {
     });
 
 
-    /* Enable / disable START button */
+    /* START BUTTON */
 
     const startButton =
         document.getElementById("start");
@@ -170,6 +162,21 @@ function renderPlayers() {
 
 
 /* =========================================
+   SAFE TEXT
+========================================= */
+
+function escapeHtml(text) {
+
+    const div =
+        document.createElement("div");
+
+    div.textContent = text;
+
+    return div.innerHTML;
+}
+
+
+/* =========================================
    CREATE ROOM
 ========================================= */
 
@@ -180,32 +187,107 @@ async function createRoom() {
             .value
             .trim();
 
+
     if (!playerName) {
 
-        toast("Enter your name first!");
+        toast(
+            "Enter your name first!"
+        );
 
         return;
     }
 
 
+    /* Generate room code */
+
     roomCode =
         generateRoomCode();
 
+
+    /* Create room */
+
+    const { error: roomError } =
+        await supabaseClient
+            .from("rooms")
+            .insert({
+                code: roomCode
+            });
+
+
+    if (roomError) {
+
+        console.error(roomError);
+
+        /* Try another code if collision */
+
+        roomCode =
+            generateRoomCode();
+
+        const retry =
+            await supabaseClient
+                .from("rooms")
+                .insert({
+                    code: roomCode
+                });
+
+        if (retry.error) {
+
+            toast(
+                "Could not create room."
+            );
+
+            return;
+        }
+
+    }
+
+
     isHost = true;
 
-    players = [];
+
+    /* Add host */
+
+    const { error: playerError } =
+        await supabaseClient
+            .from("players")
+            .insert({
+
+                id: playerId,
+
+                room_code: roomCode,
+
+                name: playerName,
+
+                is_host: true
+
+            });
 
 
-    await connectRoom();
+    if (playerError) {
+
+        console.error(playerError);
+
+        toast(
+            "Could not add you to room."
+        );
+
+        return;
+    }
 
 
     document.getElementById("roomCode")
         .textContent = roomCode;
 
+
     showScreen("lobby");
 
-    toast("Room created!");
 
+    startPolling();
+
+
+    toast(
+        "Room created!"
+    );
 }
 
 
@@ -220,6 +302,7 @@ async function joinRoom() {
             .value
             .trim();
 
+
     roomCode =
         document.getElementById("code")
             .value
@@ -229,7 +312,9 @@ async function joinRoom() {
 
     if (!playerName) {
 
-        toast("Enter your name first!");
+        toast(
+            "Enter your name first!"
+        );
 
         return;
     }
@@ -237,7 +322,111 @@ async function joinRoom() {
 
     if (!roomCode) {
 
-        toast("Enter the room code!");
+        toast(
+            "Enter the room code!"
+        );
+
+        return;
+    }
+
+
+    /* Check room */
+
+    const { data: room, error } =
+        await supabaseClient
+            .from("rooms")
+            .select("code")
+            .eq("code", roomCode)
+            .maybeSingle();
+
+
+    if (error) {
+
+        console.error(error);
+
+        toast(
+            "Could not check room."
+        );
+
+        return;
+    }
+
+
+    if (!room) {
+
+        toast(
+            "Room does not exist."
+        );
+
+        return;
+    }
+
+
+    /* Check player count */
+
+    const { count, error: countError } =
+        await supabaseClient
+            .from("players")
+            .select(
+                "id",
+                {
+                    count: "exact",
+                    head: true
+                }
+            )
+            .eq(
+                "room_code",
+                roomCode
+            );
+
+
+    if (countError) {
+
+        console.error(countError);
+
+        toast(
+            "Could not check players."
+        );
+
+        return;
+    }
+
+
+    if (count >= 6) {
+
+        toast(
+            "Room is full!"
+        );
+
+        return;
+    }
+
+
+    /* Add player */
+
+    const { error: joinError } =
+        await supabaseClient
+            .from("players")
+            .insert({
+
+                id: playerId,
+
+                room_code: roomCode,
+
+                name: playerName,
+
+                is_host: false
+
+            });
+
+
+    if (joinError) {
+
+        console.error(joinError);
+
+        toast(
+            "Could not join room."
+        );
 
         return;
     }
@@ -245,223 +434,55 @@ async function joinRoom() {
 
     isHost = false;
 
-    players = [];
-
-
-    await connectRoom();
-
 
     document.getElementById("roomCode")
         .textContent = roomCode;
 
+
     showScreen("lobby");
 
-    toast("Joined room!");
 
+    startPolling();
+
+
+    toast(
+        "Joined room!"
+    );
 }
 
 
 /* =========================================
-   CONNECT TO ROOM
+   LIVE PLAYER UPDATES
 ========================================= */
 
-async function connectRoom() {
+function startPolling() {
 
-    if (channel) {
+    stopPolling();
 
-        await supabaseClient
-            .removeChannel(channel);
+    loadPlayers();
 
-    }
+    /*
+       Check every second.
+       This makes the lobby update
+       even if Realtime is unavailable.
+    */
 
-
-    channel =
-        supabaseClient.channel(
-            "uno-room-" + roomCode,
-            {
-                config: {
-                    presence: {
-                        key: playerId
-                    }
-                }
-            }
+    pollTimer =
+        setInterval(
+            loadPlayers,
+            1000
         );
+}
 
 
-    /* -------------------------
-       PRESENCE SYNC
-    ------------------------- */
+function stopPolling() {
 
-    channel.on(
-        "presence",
-        {
-            event: "sync"
-        },
-        () => {
+    if (pollTimer) {
 
-            const state =
-                channel.presenceState();
+        clearInterval(pollTimer);
 
-            players = [];
-
-
-            Object.values(state)
-                .forEach(list => {
-
-                    list.forEach(player => {
-
-                        addPlayer(player);
-
-                    });
-
-                });
-
-        }
-    );
-
-
-    /* -------------------------
-       PLAYER JOINED
-    ------------------------- */
-
-    channel.on(
-        "broadcast",
-        {
-            event: "player-joined"
-        },
-        ({ payload }) => {
-
-            addPlayer(payload);
-
-        }
-    );
-
-
-    /* -------------------------
-       PLAYER LEFT
-    ------------------------- */
-
-    channel.on(
-        "broadcast",
-        {
-            event: "player-left"
-        },
-        ({ payload }) => {
-
-            removePlayer(payload.id);
-
-        }
-    );
-
-
-    /* -------------------------
-       GAME START
-    ------------------------- */
-
-    channel.on(
-        "broadcast",
-        {
-            event: "start-game"
-        },
-        () => {
-
-            showScreen("game");
-
-            document.getElementById("turn")
-                .textContent =
-                "Game started!";
-
-        }
-    );
-
-
-    /* -------------------------
-       SUBSCRIBE
-    ------------------------- */
-
-    const status =
-        await new Promise(resolve => {
-
-            channel.subscribe(status => {
-
-                resolve(status);
-
-            });
-
-        });
-
-
-    if (status !== "SUBSCRIBED") {
-
-        toast("Connection failed!");
-
-        console.error(
-            "Supabase connection:",
-            status
-        );
-
-        return;
-
+        pollTimer = null;
     }
-
-
-    /* -------------------------
-       ADD OURSELVES
-    ------------------------- */
-
-    const me = {
-
-        id: playerId,
-
-        name: playerName,
-
-        host: isHost
-
-    };
-
-
-    addPlayer(me);
-
-
-    /* -------------------------
-       SUPABASE PRESENCE
-    ------------------------- */
-
-    await channel.track(me);
-
-
-    /* -------------------------
-       TELL EVERYONE
-    ------------------------- */
-
-    await channel.send({
-
-        type: "broadcast",
-
-        event: "player-joined",
-
-        payload: me
-
-    });
-
-
-    /* -------------------------
-       ASK EXISTING PLAYERS
-    ------------------------- */
-
-    await channel.send({
-
-        type: "broadcast",
-
-        event: "player-joined",
-
-        payload: me
-
-    });
-
-
-    renderPlayers();
-
 }
 
 
@@ -474,17 +495,45 @@ async function startGame() {
     if (!isHost) {
 
         toast(
-            "Only the host can start the game."
+            "Only the host can start."
         );
 
         return;
     }
 
 
-    if (players.length < 2) {
+    const { data: players, error } =
+        await supabaseClient
+            .from("players")
+            .select("*")
+            .eq(
+                "room_code",
+                roomCode
+            )
+            .order(
+                "joined_at",
+                {
+                    ascending: true
+                }
+            );
+
+
+    if (error) {
+
+        console.error(error);
 
         toast(
-            "You need at least 2 players!"
+            "Could not start game."
+        );
+
+        return;
+    }
+
+
+    if (!players || players.length < 2) {
+
+        toast(
+            "Need at least 2 players!"
         );
 
         return;
@@ -501,18 +550,12 @@ async function startGame() {
     }
 
 
-    await channel.send({
+    /*
+       For now this starts the game screen.
+       We'll add the actual UNO engine next.
+    */
 
-        type: "broadcast",
-
-        event: "start-game",
-
-        payload: {
-            started: true
-        }
-
-    });
-
+    stopPolling();
 
     showScreen("game");
 
@@ -521,6 +564,15 @@ async function startGame() {
         .textContent =
         "Game started!";
 
+
+    document.getElementById("color")
+        .textContent =
+        "Color: -";
+
+
+    toast(
+        "Game started!"
+    );
 }
 
 
@@ -532,12 +584,15 @@ async function copyRoom() {
 
     if (!roomCode) return;
 
+
     try {
 
         await navigator.clipboard
             .writeText(roomCode);
 
-        toast("Room code copied!");
+        toast(
+            "Room code copied!"
+        );
 
     } catch {
 
@@ -546,7 +601,6 @@ async function copyRoom() {
         );
 
     }
-
 }
 
 
@@ -556,38 +610,32 @@ async function copyRoom() {
 
 async function leaveRoom() {
 
-    if (channel) {
+    stopPolling();
 
-        await channel.send({
 
-            type: "broadcast",
-
-            event: "player-left",
-
-            payload: {
-                id: playerId
-            }
-
-        });
-
+    if (roomCode) {
 
         await supabaseClient
-            .removeChannel(channel);
-
-        channel = null;
+            .from("players")
+            .delete()
+            .eq(
+                "id",
+                playerId
+            );
 
     }
 
 
     roomCode = "";
 
-    players = [];
-
     isHost = false;
 
 
     document.getElementById("players")
         .innerHTML = "";
+
+    document.getElementById("count")
+        .textContent = "";
 
     document.getElementById("roomCode")
         .textContent = "------";
@@ -599,7 +647,7 @@ async function leaveRoom() {
 
 
 /* =========================================
-   DRAW CARD
+   DRAW
 ========================================= */
 
 document.getElementById("draw")
@@ -607,14 +655,16 @@ document.getElementById("draw")
         "click",
         () => {
 
-            toast("Draw card");
+            toast(
+                "UNO game engine coming next."
+            );
 
         }
     );
 
 
 /* =========================================
-   UNO BUTTON
+   UNO
 ========================================= */
 
 document.getElementById("uno")
@@ -629,7 +679,7 @@ document.getElementById("uno")
 
 
 /* =========================================
-   CREATE
+   BUTTONS
 ========================================= */
 
 document.getElementById("create")
@@ -639,20 +689,12 @@ document.getElementById("create")
     );
 
 
-/* =========================================
-   JOIN
-========================================= */
-
 document.getElementById("join")
     .addEventListener(
         "click",
         joinRoom
     );
 
-
-/* =========================================
-   COPY
-========================================= */
 
 document.getElementById("copy")
     .addEventListener(
@@ -661,20 +703,12 @@ document.getElementById("copy")
     );
 
 
-/* =========================================
-   START
-========================================= */
-
 document.getElementById("start")
     .addEventListener(
         "click",
         startGame
     );
 
-
-/* =========================================
-   LEAVE
-========================================= */
 
 document.getElementById("leave")
     .addEventListener(
@@ -695,12 +729,10 @@ document.querySelectorAll(
         "click",
         () => {
 
-            const color =
-                button.dataset.color;
-
             document.getElementById("color")
                 .textContent =
-                "Color: " + color;
+                "Color: " +
+                button.dataset.color;
 
             document.getElementById("modal")
                 .classList.add("hidden");
@@ -716,5 +748,5 @@ document.querySelectorAll(
 ========================================= */
 
 console.log(
-    "UNO Friends multiplayer loaded."
+    "UNO Friends loaded successfully."
 );

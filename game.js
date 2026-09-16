@@ -163,6 +163,7 @@ async function createRoom() {
 ========================================= */
 
 async function joinRoom() {
+   console.log("JOIN BUTTON CLICKED");
 
     playerName =
         document.getElementById("name")

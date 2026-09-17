@@ -1,54 +1,37 @@
 /* =========================================================
-   UNO FRIENDS
-   COMPLETE MULTIPLAYER GAME.JS
-   Continuous Supabase synchronization
+   UNO FRIENDS — 2 to 8 PLAYERS
+   Classic UNO + custom +10
+   +2 / +4 / +10 stacking
+   +4 playable at ANY time
+   Wrong UNO / missed UNO caught = draw 2
+   Continuous multiplayer sync + animations
    ========================================================= */
 
+const SUPABASE_URL = "https://cumwoqdzpsidocqvulxd.supabase.co";
+const SUPABASE_KEY = "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
 
-/* =========================================================
-   SUPABASE
-   ========================================================= */
+const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+);
 
-const SUPABASE_URL =
-    "https://cumwoqdzpsidocqvulxd.supabase.co";
+let playerId =
+    localStorage.getItem("uno_player_id") ||
+    crypto.randomUUID();
 
-const SUPABASE_KEY =
-    "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
-
-const supabaseClient =
-    window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_KEY
-    );
-
-
-/* =========================================================
-   PLAYER / ROOM
-   ========================================================= */
-
-let playerId = crypto.randomUUID();
+localStorage.setItem(
+    "uno_player_id",
+    playerId
+);
 
 let playerName = "";
 let roomCode = "";
-
 let isHost = false;
-
 let players = [];
-
 let state = null;
-
 let pollTimer = null;
-
 let interfaceBuilt = false;
-
-let colorPickerOpen = false;
-
 let lastRenderedState = "";
-
-
-/* =========================================================
-   DOM
-   ========================================================= */
 
 const home =
     document.getElementById("home");
@@ -89,16 +72,26 @@ function showScreen(screen) {
 
     document
         .querySelectorAll(".screen")
-        .forEach(element => {
+        .forEach(x =>
+            x.classList.remove("active")
+        );
 
-            element.classList.remove(
-                "active"
-            );
-        });
+    screen.classList.add("active");
+}
 
-    screen.classList.add(
-        "active"
-    );
+
+/* =========================================================
+   ESCAPE HTML
+   ========================================================= */
+
+function escapeHTML(text) {
+
+    return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
 }
 
 
@@ -108,51 +101,40 @@ function showScreen(screen) {
 
 function toast(message) {
 
-    let element =
+    let el =
         document.getElementById(
             "unoToast"
         );
 
+    if (!el) {
 
-    if (!element) {
-
-        element =
+        el =
             document.createElement(
                 "div"
             );
 
-        element.id =
+        el.id =
             "unoToast";
 
-        document.body.appendChild(
-            element
-        );
+        document.body.appendChild(el);
     }
 
-
-    element.textContent =
+    el.textContent =
         message;
 
-    element.classList.add(
-        "show"
-    );
-
+    el.classList.add("show");
 
     clearTimeout(
-        element.timer
+        el._timer
     );
 
-
-    element.timer =
+    el._timer =
         setTimeout(
-            () => {
-
-                element.classList.remove(
+            () =>
+                el.classList.remove(
                     "show"
-                );
-
-            },
-            2300
+                ),
+            2200
         );
 }
 
@@ -166,24 +148,18 @@ function generateRoomCode() {
     const chars =
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-    let result = "";
-
-    for (
-        let i = 0;
-        i < 6;
-        i++
-    ) {
-
-        result +=
-            chars[
-                Math.floor(
-                    Math.random() *
-                    chars.length
-                )
-            ];
-    }
-
-    return result;
+    return Array
+        .from(
+            { length: 6 },
+            () =>
+                chars[
+                    Math.floor(
+                        Math.random() *
+                        chars.length
+                    )
+                ]
+        )
+        .join("");
 }
 
 
@@ -193,12 +169,11 @@ function generateRoomCode() {
 
 function shuffle(array) {
 
-    const result =
+    const a =
         [...array];
 
-
     for (
-        let i = result.length - 1;
+        let i = a.length - 1;
         i > 0;
         i--
     ) {
@@ -209,19 +184,17 @@ function shuffle(array) {
                 (i + 1)
             );
 
-
         [
-            result[i],
-            result[j]
+            a[i],
+            a[j]
         ] =
         [
-            result[j],
-            result[i]
+            a[j],
+            a[i]
         ];
     }
 
-
-    return result;
+    return a;
 }
 
 
@@ -251,29 +224,29 @@ function getAvatar(name) {
 
     let number = 0;
 
-
     for (
-        let i = 0;
-        i < name.length;
-        i++
+        const character of name
     ) {
 
         number +=
-            name.charCodeAt(i);
+            character.charCodeAt(0);
     }
 
-
     return avatars[
-        number % avatars.length
+        number %
+        avatars.length
     ];
 }
 
 
 /* =========================================================
-   CARD
+   CARDS
    ========================================================= */
 
-function makeCard(color, value) {
+function makeCard(
+    color,
+    value
+) {
 
     return {
 
@@ -284,6 +257,26 @@ function makeCard(color, value) {
 
         value
     };
+}
+
+
+function cardText(value) {
+
+    return {
+
+        skip: "⊘",
+
+        reverse: "↻",
+
+        "+2": "+2",
+
+        "+4": "+4",
+
+        "+10": "+10",
+
+        wild: "★"
+
+    }[value] ?? value;
 }
 
 
@@ -303,70 +296,76 @@ function createDeck() {
     ];
 
 
-    colors.forEach(
-        color => {
+    for (
+        const color of colors
+    ) {
+
+        deck.push(
+            makeCard(
+                color,
+                "0"
+            )
+        );
+
+
+        for (
+            let n = 1;
+            n <= 9;
+            n++
+        ) {
 
             deck.push(
                 makeCard(
                     color,
-                    "0"
+                    String(n)
                 )
             );
 
-
-            for (
-                let n = 1;
-                n <= 9;
-                n++
-            ) {
-
-                deck.push(
-                    makeCard(
-                        color,
-                        String(n)
-                    )
-                );
-
-                deck.push(
-                    makeCard(
-                        color,
-                        String(n)
-                    )
-                );
-            }
-
-
-            for (
-                let i = 0;
-                i < 2;
-                i++
-            ) {
-
-                deck.push(
-                    makeCard(
-                        color,
-                        "skip"
-                    )
-                );
-
-                deck.push(
-                    makeCard(
-                        color,
-                        "reverse"
-                    )
-                );
-
-                deck.push(
-                    makeCard(
-                        color,
-                        "+2"
-                    )
-                );
-            }
-
+            deck.push(
+                makeCard(
+                    color,
+                    String(n)
+                )
+            );
         }
-    );
 
+
+        for (
+            let i = 0;
+            i < 2;
+            i++
+        ) {
+
+            deck.push(
+                makeCard(
+                    color,
+                    "skip"
+                )
+            );
+
+            deck.push(
+                makeCard(
+                    color,
+                    "reverse"
+                )
+            );
+
+            deck.push(
+                makeCard(
+                    color,
+                    "+2"
+                )
+            );
+        }
+    }
+
+
+    /*
+       Wild cards
+       4 Wild
+       4 +4
+       4 custom +10
+    */
 
     for (
         let i = 0;
@@ -394,13 +393,6 @@ function createDeck() {
                 "+10"
             )
         );
-
-        deck.push(
-            makeCard(
-                "wild",
-                "+20"
-            )
-        );
     }
 
 
@@ -409,23 +401,7 @@ function createDeck() {
 
 
 /* =========================================================
-   CARD TEXT
-   ========================================================= */
-
-function cardText(value) {
-
-    if (value === "skip")
-        return "⊘";
-
-    if (value === "reverse")
-        return "↻";
-
-    return value;
-}
-
-
-/* =========================================================
-   GET ROOM
+   SUPABASE
    ========================================================= */
 
 async function getRoom() {
@@ -444,24 +420,16 @@ async function getRoom() {
             .maybeSingle();
 
 
-    if (error) {
-
+    if (error)
         console.error(
-            "Room error:",
+            "Room:",
             error
         );
-
-        return null;
-    }
 
 
     return data;
 }
 
-
-/* =========================================================
-   GET PLAYERS
-   ========================================================= */
 
 async function getPlayers() {
 
@@ -479,35 +447,24 @@ async function getPlayers() {
             .order(
                 "joined_at",
                 {
-                    ascending: true
+                    ascending:
+                        true
                 }
             );
 
 
-    if (error) {
-
+    if (error)
         console.error(
-            "Players error:",
+            "Players:",
             error
         );
-
-        return [];
-    }
 
 
     return data || [];
 }
 
 
-/* =========================================================
-   SAVE STATE
-   ========================================================= */
-
 async function saveState() {
-
-    if (!roomCode || !state)
-        return false;
-
 
     const {
         error
@@ -529,7 +486,7 @@ async function saveState() {
     if (error) {
 
         console.error(
-            "Save state error:",
+            "Save:",
             error
         );
 
@@ -545,15 +502,28 @@ async function saveState() {
 }
 
 
+async function roomExists(code) {
+
+    const {
+        data
+    } =
+        await supabaseClient
+            .from("rooms")
+            .select("code")
+            .eq(
+                "code",
+                code
+            )
+            .maybeSingle();
+
+
+    return !!data;
+}
+
+
 /* =========================================================
    CREATE ROOM
    ========================================================= */
-
-createButton.addEventListener(
-    "click",
-    createRoom
-);
-
 
 async function createRoom() {
 
@@ -561,14 +531,10 @@ async function createRoom() {
         nameInput.value.trim();
 
 
-    if (!playerName) {
-
-        toast(
+    if (!playerName)
+        return toast(
             "Enter your name"
         );
-
-        return;
-    }
 
 
     createButton.disabled =
@@ -591,7 +557,8 @@ async function createRoom() {
 
 
         const {
-            error: roomError
+            error:
+                roomError
         } =
             await supabaseClient
                 .from("rooms")
@@ -608,22 +575,13 @@ async function createRoom() {
                 });
 
 
-        if (roomError) {
-
-            console.error(
-                roomError
-            );
-
-            toast(
-                "Couldn't create room"
-            );
-
-            return;
-        }
+        if (roomError)
+            throw roomError;
 
 
         const {
-            error: playerError
+            error:
+                playerError
         } =
             await supabaseClient
                 .from("players")
@@ -644,18 +602,8 @@ async function createRoom() {
                 });
 
 
-        if (playerError) {
-
-            console.error(
-                playerError
-            );
-
-            toast(
-                "Couldn't enter room"
-            );
-
-            return;
-        }
+        if (playerError)
+            throw playerError;
 
 
         roomCode =
@@ -668,6 +616,15 @@ async function createRoom() {
         await enterLobby();
 
 
+    } catch (error) {
+
+        console.error(error);
+
+        toast(
+            "Couldn't create room"
+        );
+
+
     } finally {
 
         createButton.disabled =
@@ -677,37 +634,8 @@ async function createRoom() {
 
 
 /* =========================================================
-   ROOM EXISTS
-   ========================================================= */
-
-async function roomExists(code) {
-
-    const {
-        data
-    } =
-        await supabaseClient
-            .from("rooms")
-            .select("code")
-            .eq(
-                "code",
-                code
-            )
-            .maybeSingle();
-
-
-    return !!data;
-}
-
-
-/* =========================================================
    JOIN ROOM
    ========================================================= */
-
-joinButton.addEventListener(
-    "click",
-    joinRoom
-);
-
 
 async function joinRoom() {
 
@@ -721,26 +649,18 @@ async function joinRoom() {
             .toUpperCase();
 
 
-    if (!playerName) {
-
-        toast(
+    if (!playerName)
+        return toast(
             "Enter your name"
         );
-
-        return;
-    }
 
 
     if (
         roomCode.length !== 6
-    ) {
-
-        toast(
+    )
+        return toast(
             "Enter a valid room code"
         );
-
-        return;
-    }
 
 
     joinButton.disabled =
@@ -753,62 +673,44 @@ async function joinRoom() {
             await getRoom();
 
 
-        if (!room) {
-
-            toast(
+        if (!room)
+            return toast(
                 "Room not found"
             );
-
-            return;
-        }
 
 
         if (
             room.game_started
-        ) {
-
-            toast(
+        )
+            return toast(
                 "Game already started"
             );
 
-            return;
-        }
 
-
-        const roomPlayers =
+        const ps =
             await getPlayers();
 
 
         if (
-            roomPlayers.length >= 6
-        ) {
-
-            toast(
-                "Room is full"
+            ps.length >= 8
+        )
+            return toast(
+                "Room is full (8 players)"
             );
 
-            return;
-        }
 
-
-        const duplicate =
-            roomPlayers.some(
+        if (
+            ps.some(
                 p =>
                     p.name
                         .toLowerCase() ===
                     playerName
                         .toLowerCase()
-            );
-
-
-        if (duplicate) {
-
-            toast(
+            )
+        )
+            return toast(
                 "Name already taken"
             );
-
-            return;
-        }
 
 
         const {
@@ -833,18 +735,8 @@ async function joinRoom() {
                 });
 
 
-        if (error) {
-
-            console.error(
-                error
-            );
-
-            toast(
-                "Couldn't join room"
-            );
-
-            return;
-        }
+        if (error)
+            throw error;
 
 
         isHost =
@@ -852,6 +744,15 @@ async function joinRoom() {
 
 
         await enterLobby();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        toast(
+            "Couldn't join room"
+        );
 
 
     } finally {
@@ -863,7 +764,7 @@ async function joinRoom() {
 
 
 /* =========================================================
-   ENTER LOBBY
+   LOBBY
    ========================================================= */
 
 async function enterLobby() {
@@ -872,16 +773,11 @@ async function enterLobby() {
         lobby
     );
 
-
     await refreshPlayers();
 
     startPolling();
 }
 
-
-/* =========================================================
-   REFRESH PLAYERS
-   ========================================================= */
 
 async function refreshPlayers() {
 
@@ -892,8 +788,92 @@ async function refreshPlayers() {
 }
 
 
+function renderLobby() {
+
+    const codeElement =
+        document.getElementById(
+            "roomCode"
+        );
+
+    const countElement =
+        document.getElementById(
+            "count"
+        );
+
+    const list =
+        document.getElementById(
+            "players"
+        );
+
+
+    if (codeElement)
+        codeElement.textContent =
+            roomCode;
+
+
+    if (countElement)
+        countElement.textContent =
+            `(${players.length}/8)`;
+
+
+    if (!list)
+        return;
+
+
+    list.innerHTML =
+        players
+            .map(
+                player => `
+
+                    <div class="lobby-player">
+
+                        <div class="lobby-avatar">
+                            ${getAvatar(player.name)}
+                        </div>
+
+                        <div class="lobby-player-info">
+
+                            <strong>
+                                ${escapeHTML(player.name)}
+                            </strong>
+
+                            <small>
+                                ${
+                                    player.is_host
+                                    ? "HOST"
+                                    : "PLAYER"
+                                }
+                            </small>
+
+                        </div>
+
+                        ${
+                            player.id === playerId
+                            ? `
+                                <span class="lobby-you">
+                                    YOU
+                                </span>
+                            `
+                            : ""
+                        }
+
+                    </div>
+
+                `
+            )
+            .join("");
+
+
+    if (startButton)
+        startButton.style.display =
+            isHost
+            ? "block"
+            : "none";
+}
+
+
 /* =========================================================
-   POLLING
+   POLLING / SYNC
    ========================================================= */
 
 function startPolling() {
@@ -903,34 +883,29 @@ function startPolling() {
 
     /*
        IMPORTANT:
-       Polling NEVER stops when game starts.
-       Every device keeps receiving state updates.
+       Never stop polling after
+       game starts.
     */
 
     pollTimer =
         setInterval(
             syncEverything,
-            500
+            650
         );
 }
 
 
 function stopPolling() {
 
-    if (pollTimer) {
-
+    if (pollTimer)
         clearInterval(
             pollTimer
         );
 
-        pollTimer = null;
-    }
+    pollTimer =
+        null;
 }
 
-
-/* =========================================================
-   MASTER SYNC
-   ========================================================= */
 
 async function syncEverything() {
 
@@ -964,10 +939,6 @@ async function syncEverything() {
             await getPlayers();
 
 
-        /*
-           Update players if changed.
-        */
-
         const playersChanged =
             JSON.stringify(
                 latestPlayers
@@ -982,7 +953,7 @@ async function syncEverything() {
 
 
         /*
-           GAME STARTED
+           GAME STATE SYNC
         */
 
         if (
@@ -990,31 +961,31 @@ async function syncEverything() {
             room.game_state
         ) {
 
-            const newState =
+            const incoming =
                 room.game_state;
 
 
-            const newStateString =
+            const incomingString =
                 JSON.stringify(
-                    newState
+                    incoming
                 );
 
 
-            /*
-               Only update when
-               state actually changed.
-            */
-
             if (
-                newStateString !==
+                incomingString !==
                 lastRenderedState
             ) {
 
+                const oldState =
+                    state;
+
+
                 state =
-                    newState;
+                    incoming;
+
 
                 lastRenderedState =
-                    newStateString;
+                    incomingString;
 
 
                 if (
@@ -1029,10 +1000,6 @@ async function syncEverything() {
                 }
 
 
-                /*
-                   Build UI only ONCE.
-                */
-
                 if (
                     !interfaceBuilt
                 ) {
@@ -1044,17 +1011,15 @@ async function syncEverything() {
                 }
 
 
-                renderGame();
+                renderGame(
+                    oldState
+                );
             }
 
 
             return;
         }
 
-
-        /*
-           LOBBY
-        */
 
         if (
             lobby.classList.contains(
@@ -1070,7 +1035,7 @@ async function syncEverything() {
     } catch (error) {
 
         console.error(
-            "Sync error:",
+            "Sync:",
             error
         );
     }
@@ -1078,125 +1043,115 @@ async function syncEverything() {
 
 
 /* =========================================================
-   LOBBY RENDER
+   CREATE GAME STATE
    ========================================================= */
 
-function renderLobby() {
+function createGameState() {
 
-    const codeElement =
-        document.getElementById(
-            "roomCode"
-        );
+    let deck =
+        createDeck();
 
 
-    const countElement =
-        document.getElementById(
-            "count"
-        );
-
-
-    const playersElement =
-        document.getElementById(
-            "players"
-        );
-
-
-    if (codeElement) {
-
-        codeElement.textContent =
-            roomCode;
-    }
-
-
-    if (countElement) {
-
-        countElement.textContent =
-            `(${players.length}/6)`;
-    }
-
-
-    if (!playersElement)
-        return;
-
-
-    playersElement.innerHTML =
-        "";
+    const hands = {};
 
 
     players.forEach(
         player => {
 
-            const row =
-                document.createElement(
-                    "div"
+            hands[
+                player.id
+            ] = [];
+
+
+            for (
+                let i = 0;
+                i < 7;
+                i++
+            ) {
+
+                hands[
+                    player.id
+                ].push(
+                    deck.pop()
                 );
-
-
-            row.className =
-                "lobby-player";
-
-
-            row.innerHTML = `
-
-                <div class="lobby-avatar">
-                    ${getAvatar(player.name)}
-                </div>
-
-                <div class="lobby-player-info">
-
-                    <strong>
-                        ${escapeHTML(player.name)}
-                    </strong>
-
-                    <small>
-                        ${
-                            player.is_host
-                            ? "HOST"
-                            : "PLAYER"
-                        }
-                    </small>
-
-                </div>
-
-                ${
-                    player.id === playerId
-                    ? `
-                        <span class="lobby-you">
-                            YOU
-                        </span>
-                    `
-                    : ""
-                }
-
-            `;
-
-
-            playersElement.appendChild(
-                row
-            );
+            }
         }
     );
 
 
-    if (startButton) {
+    /*
+       First card cannot be wild.
+    */
 
-        startButton.style.display =
-            isHost
-            ? "block"
-            : "none";
+    let first =
+        deck.pop();
+
+
+    while (
+        first.color ===
+        "wild"
+    ) {
+
+        deck.unshift(
+            first
+        );
+
+        deck =
+            shuffle(deck);
+
+        first =
+            deck.pop();
     }
+
+
+    return {
+
+        deck,
+
+        discard: [
+            first
+        ],
+
+        hands,
+
+        currentPlayerIndex:
+            0,
+
+        direction:
+            1,
+
+        currentColor:
+            first.color,
+
+        pendingDraw:
+            0,
+
+        pendingStackType:
+            null,
+
+        pendingWild:
+            false,
+
+        winner:
+            null,
+
+        lastAction:
+            "Game started",
+
+        uno: {},
+
+        turnDrawn:
+            false,
+
+        started:
+            true
+    };
 }
 
 
 /* =========================================================
    START GAME
    ========================================================= */
-
-startButton.addEventListener(
-    "click",
-    startGame
-);
-
 
 async function startGame() {
 
@@ -1210,34 +1165,22 @@ async function startGame() {
 
     if (
         players.length < 2
-    ) {
-
-        toast(
+    )
+        return toast(
             "Need at least 2 players"
         );
 
-        return;
-    }
-
 
     if (
-        players.length > 6
-    ) {
-
-        toast(
-            "Maximum 6 players"
+        players.length > 8
+    )
+        return toast(
+            "Maximum 8 players"
         );
-
-        return;
-    }
 
 
     startButton.disabled =
         true;
-
-
-    startButton.textContent =
-        "STARTING...";
 
 
     try {
@@ -1266,18 +1209,8 @@ async function startGame() {
                 );
 
 
-        if (error) {
-
-            console.error(
-                error
-            );
-
-            toast(
-                "Couldn't start game"
-            );
-
-            return;
-        }
+        if (error)
+            throw error;
 
 
         state =
@@ -1310,134 +1243,59 @@ async function startGame() {
 
 
         /*
-           IMPORTANT:
-           Keep polling alive.
+           Keep syncing forever.
         */
 
         startPolling();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        toast(
+            "Couldn't start game"
+        );
 
 
     } finally {
 
         startButton.disabled =
             false;
-
-        startButton.textContent =
-            "START GAME";
     }
 }
 
 
 /* =========================================================
-   INITIAL GAME STATE
-   ========================================================= */
-
-function createGameState() {
-
-    let deck =
-        createDeck();
-
-
-    const hands = {};
-
-
-    players.forEach(
-        player => {
-
-            hands[player.id] =
-                [];
-
-
-            for (
-                let i = 0;
-                i < 7;
-                i++
-            ) {
-
-                hands[player.id].push(
-                    deck.pop()
-                );
-            }
-        }
-    );
-
-
-    /*
-       Start with a non-wild card.
-    */
-
-    let firstCard =
-        deck.pop();
-
-
-    while (
-        firstCard &&
-        firstCard.color === "wild"
-    ) {
-
-        deck.unshift(
-            firstCard
-        );
-
-        deck =
-            shuffle(deck);
-
-        firstCard =
-            deck.pop();
-    }
-
-
-    return {
-
-        deck,
-
-        discard: [
-            firstCard
-        ],
-
-        hands,
-
-        currentPlayerIndex:
-            0,
-
-        direction:
-            1,
-
-        currentColor:
-            firstCard.color,
-
-        pendingDraw:
-            0,
-
-        skipNext:
-            false,
-
-        pendingWild:
-            false,
-
-        winner:
-            null,
-
-        lastAction:
-            "Game started",
-
-        uno: {},
-
-        started:
-            true
-    };
-}
-
-
-/* =========================================================
-   BUILD GAME UI
+   GAME UI
    ========================================================= */
 
 function buildGameInterface() {
 
     game.innerHTML = `
 
+        <div
+            class="rotate-overlay"
+            id="rotateOverlay"
+        >
+
+            <div class="rotate-icon">
+                📱↻
+            </div>
+
+            <h2>
+                Rotate Your Phone
+            </h2>
+
+            <p>
+                UNO is designed for landscape mode.
+            </p>
+
+        </div>
+
+
         <div class="uno-app">
+
 
             <div class="uno-topbar">
 
@@ -1449,7 +1307,7 @@ function buildGameInterface() {
                     class="game-status"
                     id="gameStatus"
                 >
-                    YOUR TURN
+                    WAITING...
                 </div>
 
                 <button
@@ -1471,6 +1329,7 @@ function buildGameInterface() {
             <div class="uno-table">
 
                 <div class="table-highlight"></div>
+
 
                 <div
                     class="center-message"
@@ -1520,12 +1379,18 @@ function buildGameInterface() {
                 class="current-color"
                 id="currentColor"
             >
+
                 <span></span>
-                <b>RED</b>
+
+                <b>
+                    RED
+                </b>
+
             </div>
 
 
             <div class="bottom-player">
+
 
                 <div
                     class="my-player"
@@ -1540,6 +1405,7 @@ function buildGameInterface() {
 
 
                 <div class="game-controls">
+
 
                     <button
                         class="draw-button"
@@ -1566,6 +1432,7 @@ function buildGameInterface() {
 
                     </button>
 
+
                 </div>
 
             </div>
@@ -1588,6 +1455,7 @@ function buildGameInterface() {
                         CHOOSE COLOR
                     </div>
 
+
                     <div class="color-wheel">
 
                         <button
@@ -1597,6 +1465,7 @@ function buildGameInterface() {
                             RED
                         </button>
 
+
                         <button
                             class="choose-yellow"
                             data-color="yellow"
@@ -1604,12 +1473,14 @@ function buildGameInterface() {
                             YELLOW
                         </button>
 
+
                         <button
                             class="choose-green"
                             data-color="green"
                         >
                             GREEN
                         </button>
+
 
                         <button
                             class="choose-blue"
@@ -1646,9 +1517,7 @@ function buildGameInterface() {
                     <div
                         class="winner-subtitle"
                         id="winnerSubtitle"
-                    >
-                        Congratulations!
-                    </div>
+                    ></div>
 
                     <button
                         id="winnerLeave"
@@ -1668,50 +1537,40 @@ function buildGameInterface() {
         .getElementById(
             "newDrawButton"
         )
-        .addEventListener(
-            "click",
-            drawCard
-        );
+        .onclick =
+        drawCard;
 
 
     document
         .getElementById(
             "newDrawPile"
         )
-        .addEventListener(
-            "click",
-            drawCard
-        );
+        .onclick =
+        drawCard;
 
 
     document
         .getElementById(
             "newUnoButton"
         )
-        .addEventListener(
-            "click",
-            callUno
-        );
+        .onclick =
+        callUno;
 
 
     document
         .getElementById(
             "exitGame"
         )
-        .addEventListener(
-            "click",
-            leaveGame
-        );
+        .onclick =
+        leaveGame;
 
 
     document
         .getElementById(
             "winnerLeave"
         )
-        .addEventListener(
-            "click",
-            leaveGame
-        );
+        .onclick =
+        leaveGame;
 
 
     document
@@ -1721,15 +1580,11 @@ function buildGameInterface() {
         .forEach(
             button => {
 
-                button.addEventListener(
-                    "click",
-                    () => {
-
+                button.onclick =
+                    () =>
                         chooseColor(
                             button.dataset.color
                         );
-                    }
-                );
             }
         );
 }
@@ -1739,7 +1594,7 @@ function buildGameInterface() {
    RENDER GAME
    ========================================================= */
 
-function renderGame() {
+function renderGame(oldState = null) {
 
     if (!state)
         return;
@@ -1761,9 +1616,44 @@ function renderGame() {
 
     renderLastAction();
 
+    renderControls();
+
     renderWinner();
 
-    renderControls();
+
+    /*
+       Draw animation when hand
+       gets bigger from remote sync.
+    */
+
+    if (oldState) {
+
+        const oldCount =
+            oldState.hands?.[
+                playerId
+            ]?.length ?? 0;
+
+
+        const newCount =
+            state.hands?.[
+                playerId
+            ]?.length ?? 0;
+
+
+        if (
+            newCount >
+            oldCount
+        ) {
+
+            animateDrawCards(
+                Math.min(
+                    newCount -
+                    oldCount,
+                    10
+                )
+            );
+        }
+    }
 }
 
 
@@ -1784,8 +1674,9 @@ function renderMyPlayer() {
 
 
     const hand =
-        state.hands[playerId] ||
-        [];
+        state.hands[
+            playerId
+        ] || [];
 
 
     element.innerHTML = `
@@ -1822,126 +1713,133 @@ function renderOpponents() {
         return;
 
 
+    const opponents =
+        players.filter(
+            player =>
+                player.id !==
+                playerId
+        );
+
+
     container.innerHTML =
-        "";
+        opponents
+            .map(
+                (
+                    player,
+                    index
+                ) => {
+
+                    const hand =
+                        state.hands[
+                            player.id
+                        ] || [];
 
 
-    players
-        .filter(
-            p =>
-                p.id !== playerId
-        )
-        .forEach(
-            player => {
-
-                const hand =
-                    state.hands[
-                        player.id
-                    ] || [];
+                    const isTurn =
+                        players[
+                            state.currentPlayerIndex
+                        ]?.id ===
+                        player.id;
 
 
-                const current =
-                    players[
-                        state.currentPlayerIndex
-                    ];
+                    const visible =
+                        Math.min(
+                            hand.length,
+                            8
+                        );
 
 
-                const isTurn =
-                    current &&
-                    current.id ===
-                    player.id;
+                    const backs =
+                        Array
+                            .from(
+                                {
+                                    length:
+                                        visible
+                                },
+                                (
+                                    _,
+                                    n
+                                ) => `
+
+                                    <div
+                                        class="mini-card-back"
+                                        style="--card-index:${n}"
+                                    >
+
+                                        <span>
+                                            UNO
+                                        </span>
+
+                                    </div>
+
+                                `
+                            )
+                            .join("");
 
 
-                const element =
-                    document.createElement(
-                        "div"
-                    );
-
-
-                element.className =
-                    "opponent-seat";
-
-
-                if (isTurn) {
-
-                    element.classList.add(
-                        "opponent-turn"
-                    );
-                }
-
-
-                let cards = "";
-
-
-                const visible =
-                    Math.min(
-                        hand.length,
-                        6
-                    );
-
-
-                for (
-                    let i = 0;
-                    i < visible;
-                    i++
-                ) {
-
-                    cards += `
+                    return `
 
                         <div
-                            class="mini-card-back"
-                            style="
-                                --card-index:${i};
+                            class="
+                                opponent-seat
+                                opponent-${index}
                             "
                         >
 
-                            <span>
-                                UNO
-                            </span>
+                            <div
+                                class="
+                                    opponent-avatar
+                                    ${
+                                        isTurn
+                                        ? "active-turn"
+                                        : ""
+                                    }
+                                "
+                            >
+
+                                ${getAvatar(
+                                    player.name
+                                )}
+
+                                ${
+                                    isTurn
+                                    ? `
+                                        <div class="turn-ring"></div>
+                                      `
+                                    : ""
+                                }
+
+                            </div>
+
+
+                            <div class="opponent-name">
+
+                                ${escapeHTML(
+                                    player.name
+                                )}
+
+                            </div>
+
+
+                            <div class="opponent-hand">
+
+                                ${backs}
+
+                            </div>
+
+
+                            <div class="opponent-count">
+
+                                ${hand.length}
+
+                            </div>
 
                         </div>
 
                     `;
                 }
-
-
-                element.innerHTML = `
-
-                    <div class="opponent-avatar">
-
-                        ${getAvatar(player.name)}
-
-                        ${
-                            isTurn
-                            ? `
-                                <div class="turn-ring">
-                                </div>
-                            `
-                            : ""
-                        }
-
-                    </div>
-
-                    <div class="opponent-name">
-                        ${escapeHTML(player.name)}
-                    </div>
-
-                    <div class="opponent-hand">
-                        ${cards}
-                    </div>
-
-                    <div class="opponent-count">
-                        ${hand.length}
-                    </div>
-
-                `;
-
-
-                container.appendChild(
-                    element
-                );
-            }
-        );
+            )
+            .join("");
 }
 
 
@@ -1961,124 +1859,117 @@ function renderHand() {
         return;
 
 
-    container.innerHTML =
-        "";
-
-
     const hand =
-        state.hands[playerId] ||
-        [];
-
-
-    const current =
-        players[
-            state.currentPlayerIndex
-        ];
+        state.hands[
+            playerId
+        ] || [];
 
 
     const myTurn =
-        current &&
-        current.id ===
+        players[
+            state.currentPlayerIndex
+        ]?.id ===
         playerId;
 
 
-    hand.forEach(
-        (playedCard, index) => {
+    container.innerHTML =
+        hand
+            .map(
+                (
+                    card,
+                    index
+                ) => {
 
-            const element =
-                document.createElement(
-                    "button"
-                );
-
-
-            element.className =
-                `uno-card card-${playedCard.color}`;
-
-
-            const playable =
-                myTurn &&
-                canPlay(
-                    playedCard
-                );
+                    const playable =
+                        myTurn &&
+                        canPlay(card);
 
 
-            if (playable) {
+                    return `
 
-                element.classList.add(
-                    "card-playable"
-                );
+                        <button
 
-            } else {
+                            class="
+                                uno-card
+                                card-${card.color}
+                                ${
+                                    playable
+                                    ? "card-playable"
+                                    : "card-dim"
+                                }
+                            "
 
-                element.classList.add(
-                    "card-dim"
-                );
-            }
+                            style="
+                                --card-position:${index}
+                            "
 
+                            data-index="${index}"
+                        >
 
-            element.style.setProperty(
-                "--card-position",
-                index
-            );
+                            <span
+                                class="
+                                    card-corner
+                                    top
+                                "
+                            >
 
+                                ${cardText(
+                                    card.value
+                                )}
 
-            element.innerHTML = `
-
-                <span class="card-corner top">
-                    ${cardText(playedCard.value)}
-                </span>
-
-                <span class="card-oval">
-
-                    <span class="card-main">
-                        ${cardText(playedCard.value)}
-                    </span>
-
-                </span>
-
-                <span class="card-corner bottom">
-                    ${cardText(playedCard.value)}
-                </span>
-
-            `;
+                            </span>
 
 
-            element.addEventListener(
-                "click",
-                () => {
+                            <span class="card-oval">
 
-                    if (!myTurn) {
+                                <span class="card-main">
 
-                        toast(
-                            "Wait for your turn"
-                        );
+                                    ${cardText(
+                                        card.value
+                                    )}
 
-                        return;
-                    }
+                                </span>
 
-
-                    if (!playable) {
-
-                        toast(
-                            "You can't play that"
-                        );
-
-                        return;
-                    }
+                            </span>
 
 
-                    playCard(
-                        index
-                    );
+                            <span
+                                class="
+                                    card-corner
+                                    bottom
+                                "
+                            >
+
+                                ${cardText(
+                                    card.value
+                                )}
+
+                            </span>
+
+                        </button>
+
+                    `;
                 }
-            );
+            )
+            .join("");
 
 
-            container.appendChild(
-                element
-            );
-        }
-    );
+    container
+        .querySelectorAll(
+            ".uno-card"
+        )
+        .forEach(
+            button => {
+
+                button.onclick =
+                    () =>
+                        playCard(
+                            Number(
+                                button.dataset.index
+                            )
+                        );
+            }
+        );
 }
 
 
@@ -2100,7 +1991,8 @@ function renderDiscard() {
 
     const top =
         state.discard[
-            state.discard.length - 1
+            state.discard.length -
+            1
         ];
 
 
@@ -2115,27 +2007,47 @@ function renderDiscard() {
                 uno-card
                 center-card
                 card-${top.color}
+                card-drop-in
             "
         >
 
-            <span class="card-corner top">
-                ${cardText(top.value)}
+            <span
+                class="
+                    card-corner
+                    top
+                "
+            >
+                ${cardText(
+                    top.value
+                )}
             </span>
+
 
             <span class="card-oval">
 
                 <span class="card-main">
-                    ${cardText(top.value)}
+
+                    ${cardText(
+                        top.value
+                    )}
+
                 </span>
 
             </span>
 
-            <span class="card-corner bottom">
-                ${cardText(top.value)}
+
+            <span
+                class="
+                    card-corner
+                    bottom
+                "
+            >
+                ${cardText(
+                    top.value
+                )}
             </span>
 
         </div>
-
     `;
 }
 
@@ -2173,36 +2085,32 @@ function renderTurn() {
         );
 
 
-    if (mine) {
-
-        status.textContent =
-            "YOUR TURN";
-
-        status.className =
-            "game-status my-turn";
+    status.textContent =
+        mine
+        ? "YOUR TURN"
+        : `${current.name.toUpperCase()}'S TURN`;
 
 
-        center.textContent =
-            "YOUR TURN";
-
-        center.className =
-            "center-message my-turn";
-
-    } else {
-
-        status.textContent =
-            `${current.name}'S TURN`;
-
-        status.className =
-            "game-status";
+    status.className =
+        `game-status ${
+            mine
+            ? "my-turn"
+            : ""
+        }`;
 
 
-        center.textContent =
-            `${current.name}'S TURN`;
+    center.textContent =
+        mine
+        ? "YOUR TURN"
+        : `${current.name.toUpperCase()}'S TURN`;
 
-        center.className =
-            "center-message";
-    }
+
+    center.className =
+        `center-message ${
+            mine
+            ? "my-turn"
+            : ""
+        }`;
 }
 
 
@@ -2255,14 +2163,13 @@ function renderDirection() {
         );
 
 
-    if (!element)
-        return;
+    if (element) {
 
-
-    element.textContent =
-        state.direction === 1
+        element.textContent =
+            state.direction === 1
             ? "↻"
             : "↺";
+    }
 }
 
 
@@ -2278,13 +2185,12 @@ function renderLastAction() {
         );
 
 
-    if (!element)
-        return;
+    if (element) {
 
-
-    element.textContent =
-        state.lastAction ||
-        "";
+        element.textContent =
+            state.lastAction ||
+            "";
+    }
 }
 
 
@@ -2310,32 +2216,23 @@ function renderControls() {
         return;
 
 
-    const current =
+    const myTurn =
         players[
             state.currentPlayerIndex
-        ];
-
-
-    const myTurn =
-        current &&
-        current.id ===
+        ]?.id ===
         playerId;
 
 
     draw.disabled =
         !myTurn ||
-        !!state.winner;
-
-
-    const hand =
-        state.hands[playerId] ||
-        [];
+        !!state.winner ||
+        state.turnDrawn ||
+        state.pendingWild;
 
 
     uno.disabled =
         !myTurn ||
-        !!state.winner ||
-        hand.length > 2;
+        !!state.winner;
 }
 
 
@@ -2345,30 +2242,47 @@ function renderControls() {
 
 function canPlay(card) {
 
-    if (!state)
+    if (
+        !state ||
+        state.winner ||
+        state.pendingWild
+    )
         return false;
 
 
     /*
-       Stacking draw cards.
+       USER RULE:
+       +4 can ALWAYS be played.
     */
 
     if (
-        state.pendingDraw > 0
+        card.value ===
+        "+4"
+    )
+        return true;
+
+
+    /*
+       While stacking, only
+       same penalty type stacks.
+    */
+
+    if (
+        state.pendingDraw >
+        0
     ) {
 
         return (
-            card.value === "+2" ||
-            card.value === "+4" ||
-            card.value === "+10" ||
-            card.value === "+20"
+            card.value ===
+            state.pendingStackType
         );
     }
 
 
     const top =
         state.discard[
-            state.discard.length - 1
+            state.discard.length -
+            1
         ];
 
 
@@ -2377,7 +2291,8 @@ function canPlay(card) {
 
 
     if (
-        card.color === "wild"
+        card.color ===
+        "wild"
     )
         return true;
 
@@ -2401,14 +2316,123 @@ function canPlay(card) {
 
 
 /* =========================================================
+   DRAW CARD EFFECT
+   ========================================================= */
+
+function applyDrawCard(card) {
+
+    if (
+        card.value ===
+        "+2"
+    ) {
+
+        state.pendingDraw +=
+            2;
+
+        state.pendingStackType =
+            "+2";
+    }
+
+
+    if (
+        card.value ===
+        "+4"
+    ) {
+
+        state.pendingDraw +=
+            4;
+
+        state.pendingStackType =
+            "+4";
+    }
+
+
+    if (
+        card.value ===
+        "+10"
+    ) {
+
+        state.pendingDraw +=
+            10;
+
+        state.pendingStackType =
+            "+10";
+    }
+}
+
+
+/* =========================================================
+   NEXT TURN
+   ========================================================= */
+
+function advanceTurn(
+    skip = false
+) {
+
+    const total =
+        players.length;
+
+
+    const steps =
+        skip
+        ? 2
+        : 1;
+
+
+    state.currentPlayerIndex =
+        (
+            state.currentPlayerIndex +
+            state.direction *
+            steps +
+            total * 10
+        ) %
+        total;
+
+
+    state.turnDrawn =
+        false;
+}
+
+
+/* =========================================================
+   REFILL DECK
+   ========================================================= */
+
+function refillDeck() {
+
+    if (
+        state.discard.length <=
+        1
+    )
+        return;
+
+
+    const top =
+        state.discard[
+            state.discard.length -
+            1
+        ];
+
+
+    state.deck =
+        shuffle(
+            state.discard.slice(
+                0,
+                -1
+            )
+        );
+
+
+    state.discard =
+        [top];
+}
+
+
+/* =========================================================
    PLAY CARD
    ========================================================= */
 
 async function playCard(index) {
-
-    if (!state)
-        return;
-
 
     const current =
         players[
@@ -2417,43 +2441,44 @@ async function playCard(index) {
 
 
     if (
-        !current ||
-        current.id !== playerId
-    ) {
-
-        toast(
+        current?.id !==
+        playerId
+    )
+        return toast(
             "Wait for your turn"
         );
 
-        return;
-    }
+
+    if (
+        state.pendingWild
+    )
+        return toast(
+            "Choose a color first"
+        );
 
 
     const hand =
-        state.hands[playerId];
+        state.hands[
+            playerId
+        ] || [];
 
 
-    const played =
+    const card =
         hand[index];
 
 
-    if (!played)
-        return;
-
-
-    if (!canPlay(played)) {
-
-        toast(
+    if (
+        !card ||
+        !canPlay(card)
+    )
+        return toast(
             "You can't play that"
         );
 
-        return;
-    }
 
+    const beforeCount =
+        hand.length;
 
-    /*
-       Remove from hand.
-    */
 
     hand.splice(
         index,
@@ -2461,17 +2486,33 @@ async function playCard(index) {
     );
 
 
-    /*
-       Put onto discard.
-    */
-
     state.discard.push(
-        played
+        card
     );
 
 
     state.lastAction =
-        `${playerName} played ${cardText(played.value)}`;
+        `${playerName} played ${cardText(card.value)}`;
+
+
+    animatePlayedCard(
+        card
+    );
+
+
+    /*
+       Player now has 1 card.
+       They need to call UNO.
+    */
+
+    if (
+        beforeCount === 2
+    ) {
+
+        state.uno[
+            playerId
+        ] = false;
+    }
 
 
     /*
@@ -2479,7 +2520,8 @@ async function playCard(index) {
     */
 
     if (
-        hand.length === 0
+        hand.length ===
+        0
     ) {
 
         state.winner =
@@ -2492,6 +2534,7 @@ async function playCard(index) {
 
         await saveState();
 
+
         lastRenderedState =
             JSON.stringify(
                 state
@@ -2500,16 +2543,19 @@ async function playCard(index) {
 
         renderGame();
 
+
         return;
     }
 
 
     /*
-       Wild card.
+       Wild / +4 / +10
+       all choose a color.
     */
 
     if (
-        played.color === "wild"
+        card.color ===
+        "wild"
     ) {
 
         state.pendingWild =
@@ -2517,10 +2563,23 @@ async function playCard(index) {
 
 
         /*
-           Save immediately so
-           other devices know a
-           wild was played.
+           Apply stacking
+           immediately for
+           +4 / +10.
         */
+
+        if (
+            card.value ===
+            "+4" ||
+            card.value ===
+            "+10"
+        ) {
+
+            applyDrawCard(
+                card
+            );
+        }
+
 
         await saveState();
 
@@ -2536,20 +2595,70 @@ async function playCard(index) {
 
         openColorPicker();
 
+
         return;
     }
 
 
-    /*
-       Normal action.
-    */
+    let skip =
+        false;
 
-    applyAction(
-        played
+
+    if (
+        card.value ===
+        "+2"
+    ) {
+
+        applyDrawCard(
+            card
+        );
+    }
+
+
+    if (
+        card.value ===
+        "skip"
+    ) {
+
+        skip =
+            true;
+    }
+
+
+    if (
+        card.value ===
+        "reverse"
+    ) {
+
+        if (
+            players.length ===
+            2
+        ) {
+
+            skip =
+                true;
+
+        } else {
+
+            state.direction *=
+                -1;
+        }
+    }
+
+
+    advanceTurn(
+        skip
     );
 
 
-    nextTurn();
+    if (
+        beforeCount ===
+        2
+    ) {
+
+        state.lastAction +=
+            " — CALL UNO!";
+    }
 
 
     await saveState();
@@ -2562,111 +2671,6 @@ async function playCard(index) {
 
 
     renderGame();
-}
-
-
-/* =========================================================
-   ACTION
-   ========================================================= */
-
-function applyAction(card) {
-
-    switch (
-        card.value
-    ) {
-
-        case "+2":
-
-            state.pendingDraw += 2;
-
-            break;
-
-
-        case "+4":
-
-            state.pendingDraw += 4;
-
-            break;
-
-
-        case "+10":
-
-            state.pendingDraw += 10;
-
-            break;
-
-
-        case "+20":
-
-            state.pendingDraw += 20;
-
-            break;
-
-
-        case "skip":
-
-            state.skipNext =
-                true;
-
-            break;
-
-
-        case "reverse":
-
-            if (
-                players.length === 2
-            ) {
-
-                state.skipNext =
-                    true;
-
-            } else {
-
-                state.direction *=
-                    -1;
-            }
-
-            break;
-    }
-}
-
-
-/* =========================================================
-   NEXT TURN
-   ========================================================= */
-
-function nextTurn() {
-
-    let steps =
-        1;
-
-
-    if (
-        state.skipNext
-    ) {
-
-        steps =
-            2;
-
-        state.skipNext =
-            false;
-    }
-
-
-    const total =
-        players.length;
-
-
-    state.currentPlayerIndex =
-        (
-            state.currentPlayerIndex +
-            state.direction *
-            steps +
-            total
-        ) % total;
-
-
-    state.uno = {};
 }
 
 
@@ -2676,20 +2680,6 @@ function nextTurn() {
 
 async function drawCard() {
 
-    if (!state)
-        return;
-
-
-    if (state.winner) {
-
-        toast(
-            "Game is over"
-        );
-
-        return;
-    }
-
-
     const current =
         players[
             state.currentPlayerIndex
@@ -2697,30 +2687,44 @@ async function drawCard() {
 
 
     if (
-        !current ||
-        current.id !== playerId
-    ) {
-
-        toast(
+        current?.id !==
+        playerId
+    )
+        return toast(
             "Wait for your turn"
         );
 
-        return;
-    }
+
+    if (
+        state.turnDrawn
+    )
+        return toast(
+            "You already drew this turn"
+        );
 
 
-    let amount =
-        state.pendingDraw > 0
-            ? state.pendingDraw
-            : 1;
+    const amount =
+        state.pendingDraw >
+        0
+        ? state.pendingDraw
+        : 1;
+
+
+    const wasPenalty =
+        state.pendingDraw >
+        0;
 
 
     state.pendingDraw =
         0;
 
 
-    let drawn =
-        0;
+    state.pendingStackType =
+        null;
+
+
+    const drawn =
+        [];
 
 
     for (
@@ -2730,7 +2734,7 @@ async function drawCard() {
     ) {
 
         if (
-            state.deck.length === 0
+            !state.deck.length
         ) {
 
             refillDeck();
@@ -2738,27 +2742,59 @@ async function drawCard() {
 
 
         if (
-            state.deck.length === 0
+            !state.deck.length
         )
             break;
+
+
+        const card =
+            state.deck.pop();
 
 
         state.hands[
             playerId
         ].push(
-            state.deck.pop()
+            card
         );
 
 
-        drawn++;
+        drawn.push(
+            card
+        );
     }
 
 
     state.lastAction =
-        `${playerName} drew ${drawn} card${drawn === 1 ? "" : "s"}`;
+        `${playerName} drew ${drawn.length} card${
+            drawn.length === 1
+            ? ""
+            : "s"
+        }`;
 
 
-    nextTurn();
+    animateDrawCards(
+        drawn.length
+    );
+
+
+    /*
+       Penalty draw ends turn.
+       Normal draw keeps turn.
+    */
+
+    if (
+        wasPenalty
+    ) {
+
+        advanceTurn(
+            false
+        );
+
+    } else {
+
+        state.turnDrawn =
+            true;
+    }
 
 
     await saveState();
@@ -2773,45 +2809,24 @@ async function drawCard() {
     renderGame();
 
 
-    toast(
-        `Drew ${drawn} card${drawn === 1 ? "" : "s"}`
-    );
-}
-
-
-/* =========================================================
-   REFILL DECK
-   ========================================================= */
-
-function refillDeck() {
+    /*
+       Normal single draw:
+       playable drawn card may
+       be played.
+    */
 
     if (
-        state.discard.length <= 1
-    )
-        return;
+        !wasPenalty &&
+        drawn.length === 1 &&
+        canPlay(
+            drawn[0]
+        )
+    ) {
 
-
-    const top =
-        state.discard[
-            state.discard.length - 1
-        ];
-
-
-    const oldCards =
-        state.discard.slice(
-            0,
-            -1
+        toast(
+            "You drew a playable card"
         );
-
-
-    state.deck =
-        shuffle(
-            oldCards
-        );
-
-
-    state.discard =
-        [top];
+    }
 }
 
 
@@ -2821,52 +2836,120 @@ function refillDeck() {
 
 async function callUno() {
 
-    if (!state)
-        return;
-
-
     const current =
         players[
             state.currentPlayerIndex
         ];
 
 
-    if (
-        !current ||
-        current.id !== playerId
-    ) {
+    const hand =
+        state.hands[
+            playerId
+        ] || [];
 
-        toast(
+
+    if (
+        current?.id !==
+        playerId
+    )
+        return toast(
             "It's not your turn"
         );
 
-        return;
-    }
 
-
-    const hand =
-        state.hands[playerId] ||
-        [];
-
+    /*
+       Correct UNO:
+       exactly 1 card.
+    */
 
     if (
-        hand.length > 2
+        hand.length ===
+        1
     ) {
 
+        state.uno[
+            playerId
+        ] = true;
+
+
+        state.lastAction =
+            `${playerName} shouted UNO!`;
+
+
+        await saveState();
+
+
+        lastRenderedState =
+            JSON.stringify(
+                state
+            );
+
+
+        const button =
+            document.getElementById(
+                "newUnoButton"
+            );
+
+
+        if (button) {
+
+            button.classList.add(
+                "uno-hit"
+            );
+
+
+            setTimeout(
+                () =>
+                    button.classList.remove(
+                        "uno-hit"
+                    ),
+                600
+            );
+        }
+
+
+        renderGame();
+
+
         toast(
-            "UNO isn't available yet"
+            "🔥 UNO!"
         );
+
 
         return;
     }
 
 
-    state.uno[playerId] =
-        true;
+    /*
+       Wrong UNO:
+       draw 2.
+    */
+
+    for (
+        let i = 0;
+        i < 2;
+        i++
+    ) {
+
+        if (
+            !state.deck.length
+        )
+            refillDeck();
+
+
+        if (
+            state.deck.length
+        ) {
+
+            hand.push(
+                state.deck.pop()
+            );
+        }
+    }
 
 
     state.lastAction =
-        `${playerName} shouted UNO!`;
+        `${playerName} called UNO incorrectly and drew 2!`;
 
 
     await saveState();
@@ -2878,38 +2961,12 @@ async function callUno() {
         );
 
 
-    const button =
-        document.getElementById(
-            "newUnoButton"
-        );
-
-
-    if (button) {
-
-        button.classList.add(
-            "uno-hit"
-        );
-
-
-        setTimeout(
-            () => {
-
-                button.classList.remove(
-                    "uno-hit"
-                );
-
-            },
-            600
-        );
-    }
+    renderGame();
 
 
     toast(
-        "🔥 UNO!"
+        "Wrong UNO! +2 cards"
     );
-
-
-    renderGame();
 }
 
 
@@ -2919,28 +2976,24 @@ async function callUno() {
 
 function openColorPicker() {
 
-    colorPickerOpen =
-        true;
-
-
     const overlay =
         document.getElementById(
             "colorOverlay"
         );
 
 
-    if (overlay) {
-
+    if (overlay)
         overlay.classList.add(
             "open"
         );
-    }
 }
 
 
 async function chooseColor(color) {
 
-    if (!colorPickerOpen)
+    if (
+        !state.pendingWild
+    )
         return;
 
 
@@ -2952,29 +3005,27 @@ async function chooseColor(color) {
         false;
 
 
-    colorPickerOpen =
-        false;
+    state.lastAction =
+        `${playerName} chose ${color}`;
 
 
-    const overlay =
-        document.getElementById(
+    document
+        .getElementById(
             "colorOverlay"
-        );
-
-
-    if (overlay) {
-
-        overlay.classList.remove(
+        )
+        ?.classList.remove(
             "open"
         );
-    }
 
 
-    state.lastAction =
-        `${playerName} changed the color to ${color}`;
+    /*
+       Wild card effects have
+       already been applied.
+    */
 
-
-    nextTurn();
+    advanceTurn(
+        false
+    );
 
 
     await saveState();
@@ -3006,7 +3057,9 @@ function renderWinner() {
         return;
 
 
-    if (!state.winner) {
+    if (
+        !state.winner
+    ) {
 
         overlay.classList.remove(
             "open"
@@ -3028,37 +3081,24 @@ function renderWinner() {
         return;
 
 
-    const title =
-        document.getElementById(
+    document
+        .getElementById(
             "winnerTitle"
-        );
+        )
+        .textContent =
+        winner.id === playerId
+        ? "YOU WIN!"
+        : `${winner.name.toUpperCase()} WINS!`;
 
 
-    const subtitle =
-        document.getElementById(
+    document
+        .getElementById(
             "winnerSubtitle"
-        );
-
-
-    if (
-        winner.id ===
-        playerId
-    ) {
-
-        title.textContent =
-            "YOU WIN!";
-
-        subtitle.textContent =
-            "🏆 What a game!";
-
-    } else {
-
-        title.textContent =
-            `${winner.name.toUpperCase()} WINS!`;
-
-        subtitle.textContent =
-            "Better luck next round!";
-    }
+        )
+        .textContent =
+        winner.id === playerId
+        ? "🏆 What a game!"
+        : "Better luck next round!";
 
 
     overlay.classList.add(
@@ -3068,7 +3108,267 @@ function renderWinner() {
 
 
 /* =========================================================
-   LEAVE GAME
+   DRAW ANIMATION
+   ========================================================= */
+
+function animateDrawCards(
+    count
+) {
+
+    if (!count)
+        return;
+
+
+    const source =
+        document.getElementById(
+            "newDrawPile"
+        );
+
+
+    const target =
+        document.getElementById(
+            "newHand"
+        );
+
+
+    if (
+        !source ||
+        !target
+    )
+        return;
+
+
+    const s =
+        source.getBoundingClientRect();
+
+
+    const t =
+        target.getBoundingClientRect();
+
+
+    for (
+        let i = 0;
+        i < Math.min(
+            count,
+            10
+        );
+        i++
+    ) {
+
+        const flyer =
+            document.createElement(
+                "div"
+            );
+
+
+        flyer.className =
+            "flying-card";
+
+
+        flyer.innerHTML =
+            "<span>UNO</span>";
+
+
+        flyer.style.left =
+            `${
+                s.left +
+                s.width / 2 -
+                27
+            }px`;
+
+
+        flyer.style.top =
+            `${
+                s.top +
+                s.height / 2 -
+                38
+            }px`;
+
+
+        document.body.appendChild(
+            flyer
+        );
+
+
+        const dx =
+            t.left +
+            t.width / 2 -
+            (
+                s.left +
+                s.width / 2
+            );
+
+
+        const dy =
+            t.top +
+            t.height / 2 -
+            (
+                s.top +
+                s.height / 2
+            );
+
+
+        setTimeout(
+            () => {
+
+                flyer.style.transform =
+                    `
+                        translate(
+                            ${
+                                dx +
+                                i * 7
+                            }px,
+                            ${
+                                dy +
+                                i * 2
+                            }px
+                        )
+                        rotate(
+                            ${
+                                i % 2
+                                ? 12
+                                : -12
+                            }deg
+                        )
+                        scale(.72)
+                    `;
+
+
+                flyer.style.opacity =
+                    "0.05";
+
+            },
+            20 +
+            i * 55
+        );
+
+
+        setTimeout(
+            () =>
+                flyer.remove(),
+            850 +
+            i * 55
+        );
+    }
+}
+
+
+/* =========================================================
+   PLAY ANIMATION
+   ========================================================= */
+
+function animatePlayedCard(
+    card
+) {
+
+    const hand =
+        document.getElementById(
+            "newHand"
+        );
+
+
+    const discard =
+        document.getElementById(
+            "newDiscardPile"
+        );
+
+
+    if (
+        !hand ||
+        !discard
+    )
+        return;
+
+
+    const source =
+        hand.getBoundingClientRect();
+
+
+    const target =
+        discard.getBoundingClientRect();
+
+
+    const flyer =
+        document.createElement(
+            "div"
+        );
+
+
+    flyer.className =
+        `
+            flying-card
+            played-flying
+            card-${card.color}
+        `;
+
+
+    flyer.innerHTML =
+        `
+            <span>
+                ${cardText(
+                    card.value
+                )}
+            </span>
+        `;
+
+
+    flyer.style.left =
+        `${
+            source.left +
+            source.width / 2 -
+            27
+        }px`;
+
+
+    flyer.style.top =
+        `${
+            source.top +
+            source.height / 2 -
+            38
+        }px`;
+
+
+    document.body.appendChild(
+        flyer
+    );
+
+
+    requestAnimationFrame(
+        () => {
+
+            flyer.style.transform =
+                `
+                    translate(
+                        ${
+                            target.left -
+                            source.left
+                        }px,
+                        ${
+                            target.top -
+                            source.top
+                        }px
+                    )
+                    rotate(360deg)
+                    scale(.85)
+                `;
+
+
+            flyer.style.opacity =
+                "0";
+        }
+    );
+
+
+    setTimeout(
+        () =>
+            flyer.remove(),
+        650
+    );
+}
+
+
+/* =========================================================
+   LEAVE
    ========================================================= */
 
 async function leaveGame() {
@@ -3116,89 +3416,92 @@ async function leaveGame() {
 
 
 /* =========================================================
-   OLD LEAVE BUTTON
+   BUTTONS
    ========================================================= */
 
-if (leaveButton) {
-
-    leaveButton.addEventListener(
-        "click",
-        leaveGame
-    );
-}
+createButton?.addEventListener(
+    "click",
+    createRoom
+);
 
 
-/* =========================================================
-   COPY ROOM CODE
-   ========================================================= */
+joinButton?.addEventListener(
+    "click",
+    joinRoom
+);
 
-if (copyButton) {
 
-    copyButton.addEventListener(
-        "click",
-        async () => {
+startButton?.addEventListener(
+    "click",
+    startGame
+);
 
-            try {
 
-                await navigator
-                    .clipboard
-                    .writeText(
-                        roomCode
-                    );
+leaveButton?.addEventListener(
+    "click",
+    leaveGame
+);
 
-                toast(
-                    "Room code copied!"
-                );
 
-            } catch {
+copyButton?.addEventListener(
+    "click",
+    async () => {
 
-                toast(
+        try {
+
+            await navigator
+                .clipboard
+                .writeText(
                     roomCode
                 );
-            }
+
+
+            toast(
+                "Room code copied!"
+            );
+
+        } catch {
+
+            toast(
+                roomCode
+            );
         }
-    );
-}
+    }
+);
 
 
 /* =========================================================
    ENTER KEY
    ========================================================= */
 
-if (nameInput) {
+nameInput?.addEventListener(
+    "keydown",
+    event => {
 
-    nameInput.addEventListener(
-        "keydown",
-        event => {
+        if (
+            event.key ===
+            "Enter"
+        ) {
 
-            if (
-                event.key ===
-                "Enter"
-            ) {
-
-                codeInput.focus();
-            }
+            codeInput.focus();
         }
-    );
-}
+    }
+);
 
 
-if (codeInput) {
+codeInput?.addEventListener(
+    "keydown",
+    event => {
 
-    codeInput.addEventListener(
-        "keydown",
-        event => {
+        if (
+            event.key ===
+            "Enter"
+        ) {
 
-            if (
-                event.key ===
-                "Enter"
-            ) {
-
-                joinButton.click();
-            }
+            joinButton.click();
         }
-    );
-}
+    }
+);
 
 
 /* =========================================================
@@ -3207,56 +3510,21 @@ if (codeInput) {
 
 document.addEventListener(
     "visibilitychange",
-    async () => {
+    () => {
 
         if (
             !document.hidden &&
             roomCode
         ) {
 
-            await syncEverything();
+            syncEverything();
         }
     }
 );
 
 
 /* =========================================================
-   ESCAPE HTML
-   ========================================================= */
-
-function escapeHTML(text) {
-
-    return String(text)
-
-        .replaceAll(
-            "&",
-            "&amp;"
-        )
-
-        .replaceAll(
-            "<",
-            "&lt;"
-        )
-
-        .replaceAll(
-            ">",
-            "&gt;"
-        )
-
-        .replaceAll(
-            '"',
-            "&quot;"
-        )
-
-        .replaceAll(
-            "'",
-            "&#039;"
-        );
-}
-
-
-/* =========================================================
-   INITIAL
+   START
    ========================================================= */
 
 showScreen(
@@ -3264,5 +3532,5 @@ showScreen(
 );
 
 console.log(
-    "UNO Friends multiplayer loaded"
+    "UNO Friends — 8 player multiplayer loaded"
 );

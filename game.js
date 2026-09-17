@@ -1,6 +1,7 @@
 /* =========================================================
    UNO FRIENDS
-   FULL UNO-STYLE MULTIPLAYER APP
+   COMPLETE MULTIPLAYER GAME.JS
+   Continuous Supabase synchronization
    ========================================================= */
 
 
@@ -11,9 +12,6 @@
 const SUPABASE_URL =
     "https://cumwoqdzpsidocqvulxd.supabase.co";
 
-/*
-   PUT YOUR EXISTING SUPABASE PUBLISHABLE / ANON KEY HERE
-*/
 const SUPABASE_KEY =
     "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
 
@@ -25,7 +23,7 @@ const supabaseClient =
 
 
 /* =========================================================
-   PLAYER
+   PLAYER / ROOM
    ========================================================= */
 
 let playerId = crypto.randomUUID();
@@ -41,11 +39,15 @@ let state = null;
 
 let pollTimer = null;
 
+let interfaceBuilt = false;
+
 let colorPickerOpen = false;
+
+let lastRenderedState = "";
 
 
 /* =========================================================
-   BASIC DOM
+   DOM
    ========================================================= */
 
 const home =
@@ -80,18 +82,23 @@ const copyButton =
 
 
 /* =========================================================
-   SCREEN CONTROL
+   SCREEN
    ========================================================= */
 
 function showScreen(screen) {
 
     document
         .querySelectorAll(".screen")
-        .forEach(s => {
-            s.classList.remove("active");
+        .forEach(element => {
+
+            element.classList.remove(
+                "active"
+            );
         });
 
-    screen.classList.add("active");
+    screen.classList.add(
+        "active"
+    );
 }
 
 
@@ -102,35 +109,56 @@ function showScreen(screen) {
 function toast(message) {
 
     let element =
-        document.getElementById("unoToast");
+        document.getElementById(
+            "unoToast"
+        );
+
 
     if (!element) {
 
         element =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        element.id = "unoToast";
+        element.id =
+            "unoToast";
 
-        document.body.appendChild(element);
+        document.body.appendChild(
+            element
+        );
     }
 
-    element.textContent = message;
 
-    element.classList.add("show");
+    element.textContent =
+        message;
 
-    clearTimeout(element.timer);
+    element.classList.add(
+        "show"
+    );
+
+
+    clearTimeout(
+        element.timer
+    );
+
 
     element.timer =
-        setTimeout(() => {
+        setTimeout(
+            () => {
 
-            element.classList.remove("show");
+                element.classList.remove(
+                    "show"
+                );
 
-        }, 2300);
+            },
+            2300
+        );
 }
 
 
 /* =========================================================
-   RANDOM ROOM
+   ROOM CODE
    ========================================================= */
 
 function generateRoomCode() {
@@ -140,7 +168,11 @@ function generateRoomCode() {
 
     let result = "";
 
-    for (let i = 0; i < 6; i++) {
+    for (
+        let i = 0;
+        i < 6;
+        i++
+    ) {
 
         result +=
             chars[
@@ -164,6 +196,7 @@ function shuffle(array) {
     const result =
         [...array];
 
+
     for (
         let i = result.length - 1;
         i > 0;
@@ -176,6 +209,7 @@ function shuffle(array) {
                 (i + 1)
             );
 
+
         [
             result[i],
             result[j]
@@ -185,6 +219,7 @@ function shuffle(array) {
             result[i]
         ];
     }
+
 
     return result;
 }
@@ -214,7 +249,8 @@ const avatars = [
 
 function getAvatar(name) {
 
-    let value = 0;
+    let number = 0;
+
 
     for (
         let i = 0;
@@ -222,29 +258,38 @@ function getAvatar(name) {
         i++
     ) {
 
-        value +=
+        number +=
             name.charCodeAt(i);
     }
 
+
     return avatars[
-        value % avatars.length
+        number % avatars.length
     ];
 }
 
 
 /* =========================================================
-   DECK
+   CARD
    ========================================================= */
 
-function card(color, value) {
+function makeCard(color, value) {
 
     return {
-        id: crypto.randomUUID(),
+
+        id:
+            crypto.randomUUID(),
+
         color,
+
         value
     };
 }
 
+
+/* =========================================================
+   CREATE DECK
+   ========================================================= */
 
 function createDeck() {
 
@@ -258,69 +303,103 @@ function createDeck() {
     ];
 
 
-    colors.forEach(color => {
-
-        deck.push(
-            card(color, "0")
-        );
-
-
-        for (
-            let number = 1;
-            number <= 9;
-            number++
-        ) {
+    colors.forEach(
+        color => {
 
             deck.push(
-                card(
+                makeCard(
                     color,
-                    String(number)
+                    "0"
                 )
             );
 
-            deck.push(
-                card(
-                    color,
-                    String(number)
-                )
-            );
+
+            for (
+                let n = 1;
+                n <= 9;
+                n++
+            ) {
+
+                deck.push(
+                    makeCard(
+                        color,
+                        String(n)
+                    )
+                );
+
+                deck.push(
+                    makeCard(
+                        color,
+                        String(n)
+                    )
+                );
+            }
+
+
+            for (
+                let i = 0;
+                i < 2;
+                i++
+            ) {
+
+                deck.push(
+                    makeCard(
+                        color,
+                        "skip"
+                    )
+                );
+
+                deck.push(
+                    makeCard(
+                        color,
+                        "reverse"
+                    )
+                );
+
+                deck.push(
+                    makeCard(
+                        color,
+                        "+2"
+                    )
+                );
+            }
+
         }
+    );
 
 
-        for (let i = 0; i < 2; i++) {
-
-            deck.push(
-                card(color, "skip")
-            );
-
-            deck.push(
-                card(color, "reverse")
-            );
-
-            deck.push(
-                card(color, "+2")
-            );
-        }
-
-    });
-
-
-    for (let i = 0; i < 4; i++) {
+    for (
+        let i = 0;
+        i < 4;
+        i++
+    ) {
 
         deck.push(
-            card("wild", "wild")
+            makeCard(
+                "wild",
+                "wild"
+            )
         );
 
         deck.push(
-            card("wild", "+4")
+            makeCard(
+                "wild",
+                "+4"
+            )
         );
 
         deck.push(
-            card("wild", "+10")
+            makeCard(
+                "wild",
+                "+10"
+            )
         );
 
         deck.push(
-            card("wild", "+20")
+            makeCard(
+                "wild",
+                "+20"
+            )
         );
     }
 
@@ -330,10 +409,10 @@ function createDeck() {
 
 
 /* =========================================================
-   CARD DISPLAY
+   CARD TEXT
    ========================================================= */
 
-function displayValue(value) {
+function cardText(value) {
 
     if (value === "skip")
         return "⊘";
@@ -346,36 +425,57 @@ function displayValue(value) {
 
 
 /* =========================================================
-   ROOM DATABASE
+   GET ROOM
    ========================================================= */
 
 async function getRoom() {
 
-    const { data, error } =
+    const {
+        data,
+        error
+    } =
         await supabaseClient
             .from("rooms")
             .select("*")
-            .eq("code", roomCode)
+            .eq(
+                "code",
+                roomCode
+            )
             .maybeSingle();
+
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "Room error:",
+            error
+        );
 
         return null;
     }
+
 
     return data;
 }
 
 
-async function getRoomPlayers() {
+/* =========================================================
+   GET PLAYERS
+   ========================================================= */
 
-    const { data, error } =
+async function getPlayers() {
+
+    const {
+        data,
+        error
+    } =
         await supabaseClient
             .from("players")
             .select("*")
-            .eq("room_code", roomCode)
+            .eq(
+                "room_code",
+                roomCode
+            )
             .order(
                 "joined_at",
                 {
@@ -383,14 +483,65 @@ async function getRoomPlayers() {
                 }
             );
 
+
     if (error) {
 
-        console.error(error);
+        console.error(
+            "Players error:",
+            error
+        );
 
         return [];
     }
 
+
     return data || [];
+}
+
+
+/* =========================================================
+   SAVE STATE
+   ========================================================= */
+
+async function saveState() {
+
+    if (!roomCode || !state)
+        return false;
+
+
+    const {
+        error
+    } =
+        await supabaseClient
+            .from("rooms")
+            .update({
+
+                game_state:
+                    state
+
+            })
+            .eq(
+                "code",
+                roomCode
+            );
+
+
+    if (error) {
+
+        console.error(
+            "Save state error:",
+            error
+        );
+
+        toast(
+            "Connection problem"
+        );
+
+        return false;
+    }
+
+
+    return true;
 }
 
 
@@ -409,6 +560,7 @@ async function createRoom() {
     playerName =
         nameInput.value.trim();
 
+
     if (!playerName) {
 
         toast(
@@ -419,20 +571,21 @@ async function createRoom() {
     }
 
 
-    createButton.disabled = true;
+    createButton.disabled =
+        true;
 
 
     try {
 
-        let newCode =
+        let code =
             generateRoomCode();
 
 
         while (
-            await roomExists(newCode)
+            await roomExists(code)
         ) {
 
-            newCode =
+            code =
                 generateRoomCode();
         }
 
@@ -444,11 +597,13 @@ async function createRoom() {
                 .from("rooms")
                 .insert({
 
-                    code: newCode,
+                    code,
 
-                    game_started: false,
+                    game_started:
+                        false,
 
-                    game_state: null
+                    game_state:
+                        null
 
                 });
 
@@ -474,13 +629,17 @@ async function createRoom() {
                 .from("players")
                 .insert({
 
-                    id: playerId,
+                    id:
+                        playerId,
 
-                    room_code: newCode,
+                    room_code:
+                        code,
 
-                    name: playerName,
+                    name:
+                        playerName,
 
-                    is_host: true
+                    is_host:
+                        true
 
                 });
 
@@ -492,7 +651,7 @@ async function createRoom() {
             );
 
             toast(
-                "Couldn't join room"
+                "Couldn't enter room"
             );
 
             return;
@@ -500,9 +659,11 @@ async function createRoom() {
 
 
         roomCode =
-            newCode;
+            code;
 
-        isHost = true;
+        isHost =
+            true;
+
 
         await enterLobby();
 
@@ -515,6 +676,10 @@ async function createRoom() {
 }
 
 
+/* =========================================================
+   ROOM EXISTS
+   ========================================================= */
+
 async function roomExists(code) {
 
     const {
@@ -523,8 +688,12 @@ async function roomExists(code) {
         await supabaseClient
             .from("rooms")
             .select("code")
-            .eq("code", code)
+            .eq(
+                "code",
+                code
+            )
             .maybeSingle();
+
 
     return !!data;
 }
@@ -544,6 +713,7 @@ async function joinRoom() {
 
     playerName =
         nameInput.value.trim();
+
 
     roomCode =
         codeInput.value
@@ -566,7 +736,7 @@ async function joinRoom() {
     ) {
 
         toast(
-            "Enter a 6-character code"
+            "Enter a valid room code"
         );
 
         return;
@@ -586,7 +756,7 @@ async function joinRoom() {
         if (!room) {
 
             toast(
-                "Room doesn't exist"
+                "Room not found"
             );
 
             return;
@@ -605,12 +775,12 @@ async function joinRoom() {
         }
 
 
-        const existingPlayers =
-            await getRoomPlayers();
+        const roomPlayers =
+            await getPlayers();
 
 
         if (
-            existingPlayers.length >= 6
+            roomPlayers.length >= 6
         ) {
 
             toast(
@@ -621,13 +791,17 @@ async function joinRoom() {
         }
 
 
-        if (
-            existingPlayers.some(
+        const duplicate =
+            roomPlayers.some(
                 p =>
-                    p.name.toLowerCase() ===
-                    playerName.toLowerCase()
-            )
-        ) {
+                    p.name
+                        .toLowerCase() ===
+                    playerName
+                        .toLowerCase()
+            );
+
+
+        if (duplicate) {
 
             toast(
                 "Name already taken"
@@ -644,20 +818,26 @@ async function joinRoom() {
                 .from("players")
                 .insert({
 
-                    id: playerId,
+                    id:
+                        playerId,
 
-                    room_code: roomCode,
+                    room_code:
+                        roomCode,
 
-                    name: playerName,
+                    name:
+                        playerName,
 
-                    is_host: false
+                    is_host:
+                        false
 
                 });
 
 
         if (error) {
 
-            console.error(error);
+            console.error(
+                error
+            );
 
             toast(
                 "Couldn't join room"
@@ -667,7 +847,9 @@ async function joinRoom() {
         }
 
 
-        isHost = false;
+        isHost =
+            false;
+
 
         await enterLobby();
 
@@ -681,27 +863,54 @@ async function joinRoom() {
 
 
 /* =========================================================
-   LOBBY
+   ENTER LOBBY
    ========================================================= */
 
 async function enterLobby() {
 
-    showScreen(lobby);
+    showScreen(
+        lobby
+    );
 
-    renderLobby();
+
+    await refreshPlayers();
 
     startPolling();
 }
 
 
+/* =========================================================
+   REFRESH PLAYERS
+   ========================================================= */
+
+async function refreshPlayers() {
+
+    players =
+        await getPlayers();
+
+    renderLobby();
+}
+
+
+/* =========================================================
+   POLLING
+   ========================================================= */
+
 function startPolling() {
 
     stopPolling();
 
+
+    /*
+       IMPORTANT:
+       Polling NEVER stops when game starts.
+       Every device keeps receiving state updates.
+    */
+
     pollTimer =
         setInterval(
-            sync,
-            800
+            syncEverything,
+            500
         );
 }
 
@@ -720,70 +929,156 @@ function stopPolling() {
 
 
 /* =========================================================
-   SYNC
+   MASTER SYNC
    ========================================================= */
 
-async function sync() {
+async function syncEverything() {
 
     if (!roomCode)
         return;
 
 
-    const room =
-        await getRoom();
+    try {
+
+        const room =
+            await getRoom();
 
 
-    if (!room) {
+        if (!room) {
 
-        stopPolling();
+            stopPolling();
 
-        toast(
-            "Room closed"
+            showScreen(
+                home
+            );
+
+            toast(
+                "Room no longer exists"
+            );
+
+            return;
+        }
+
+
+        const latestPlayers =
+            await getPlayers();
+
+
+        /*
+           Update players if changed.
+        */
+
+        const playersChanged =
+            JSON.stringify(
+                latestPlayers
+            ) !==
+            JSON.stringify(
+                players
+            );
+
+
+        players =
+            latestPlayers;
+
+
+        /*
+           GAME STARTED
+        */
+
+        if (
+            room.game_started &&
+            room.game_state
+        ) {
+
+            const newState =
+                room.game_state;
+
+
+            const newStateString =
+                JSON.stringify(
+                    newState
+                );
+
+
+            /*
+               Only update when
+               state actually changed.
+            */
+
+            if (
+                newStateString !==
+                lastRenderedState
+            ) {
+
+                state =
+                    newState;
+
+                lastRenderedState =
+                    newStateString;
+
+
+                if (
+                    !game.classList.contains(
+                        "active"
+                    )
+                ) {
+
+                    showScreen(
+                        game
+                    );
+                }
+
+
+                /*
+                   Build UI only ONCE.
+                */
+
+                if (
+                    !interfaceBuilt
+                ) {
+
+                    buildGameInterface();
+
+                    interfaceBuilt =
+                        true;
+                }
+
+
+                renderGame();
+            }
+
+
+            return;
+        }
+
+
+        /*
+           LOBBY
+        */
+
+        if (
+            lobby.classList.contains(
+                "active"
+            ) &&
+            playersChanged
+        ) {
+
+            renderLobby();
+        }
+
+
+    } catch (error) {
+
+        console.error(
+            "Sync error:",
+            error
         );
-
-        showScreen(home);
-
-        return;
-    }
-
-
-    players =
-        await getRoomPlayers();
-
-
-    if (
-        room.game_started &&
-        room.game_state
-    ) {
-
-        state =
-            room.game_state;
-
-        stopPolling();
-
-        showScreen(game);
-
-        buildGameInterface();
-
-        renderGame();
-
-        return;
-    }
-
-
-    if (
-        lobby.classList.contains(
-            "active"
-        )
-    ) {
-
-        renderLobby();
     }
 }
 
 
 /* =========================================================
-   RENDER LOBBY
+   LOBBY RENDER
    ========================================================= */
 
 function renderLobby() {
@@ -793,10 +1088,12 @@ function renderLobby() {
             "roomCode"
         );
 
+
     const countElement =
         document.getElementById(
             "count"
         );
+
 
     const playersElement =
         document.getElementById(
@@ -804,14 +1101,18 @@ function renderLobby() {
         );
 
 
-    if (codeElement)
+    if (codeElement) {
+
         codeElement.textContent =
             roomCode;
+    }
 
 
-    if (countElement)
+    if (countElement) {
+
         countElement.textContent =
             `(${players.length}/6)`;
+    }
 
 
     if (!playersElement)
@@ -822,60 +1123,67 @@ function renderLobby() {
         "";
 
 
-    players.forEach(player => {
+    players.forEach(
+        player => {
 
-        const row =
-            document.createElement(
-                "div"
+            const row =
+                document.createElement(
+                    "div"
+                );
+
+
+            row.className =
+                "lobby-player";
+
+
+            row.innerHTML = `
+
+                <div class="lobby-avatar">
+                    ${getAvatar(player.name)}
+                </div>
+
+                <div class="lobby-player-info">
+
+                    <strong>
+                        ${escapeHTML(player.name)}
+                    </strong>
+
+                    <small>
+                        ${
+                            player.is_host
+                            ? "HOST"
+                            : "PLAYER"
+                        }
+                    </small>
+
+                </div>
+
+                ${
+                    player.id === playerId
+                    ? `
+                        <span class="lobby-you">
+                            YOU
+                        </span>
+                    `
+                    : ""
+                }
+
+            `;
+
+
+            playersElement.appendChild(
+                row
             );
-
-        row.className =
-            "lobby-player";
-
-
-        row.innerHTML = `
-
-            <div class="lobby-avatar">
-                ${getAvatar(player.name)}
-            </div>
-
-            <div class="lobby-player-info">
-
-                <strong>
-                    ${escapeHTML(player.name)}
-                </strong>
-
-                <small>
-                    ${player.is_host
-                        ? "HOST"
-                        : "PLAYER"}
-                </small>
-
-            </div>
-
-            ${
-                player.id === playerId
-                ? `<span class="lobby-you">
-                       YOU
-                   </span>`
-                : ""
-            }
-
-        `;
-
-
-        playersElement.appendChild(
-            row
-        );
-    });
+        }
+    );
 
 
     if (startButton) {
 
         startButton.style.display =
             isHost
-                ? "block"
-                : "none";
+            ? "block"
+            : "none";
     }
 }
 
@@ -897,10 +1205,12 @@ async function startGame() {
 
 
     players =
-        await getRoomPlayers();
+        await getPlayers();
 
 
-    if (players.length < 2) {
+    if (
+        players.length < 2
+    ) {
 
         toast(
             "Need at least 2 players"
@@ -910,7 +1220,9 @@ async function startGame() {
     }
 
 
-    if (players.length > 6) {
+    if (
+        players.length > 6
+    ) {
 
         toast(
             "Maximum 6 players"
@@ -924,53 +1236,95 @@ async function startGame() {
         true;
 
 
-    const newState =
-        createGameState();
+    startButton.textContent =
+        "STARTING...";
 
 
-    const {
-        error
-    } =
-        await supabaseClient
-            .from("rooms")
-            .update({
+    try {
 
-                game_started: true,
+        const newState =
+            createGameState();
 
-                game_state: newState
 
-            })
-            .eq(
-                "code",
-                roomCode
+        const {
+            error
+        } =
+            await supabaseClient
+                .from("rooms")
+                .update({
+
+                    game_started:
+                        true,
+
+                    game_state:
+                        newState
+
+                })
+                .eq(
+                    "code",
+                    roomCode
+                );
+
+
+        if (error) {
+
+            console.error(
+                error
+            );
+
+            toast(
+                "Couldn't start game"
+            );
+
+            return;
+        }
+
+
+        state =
+            newState;
+
+
+        lastRenderedState =
+            JSON.stringify(
+                newState
             );
 
 
-    if (error) {
-
-        console.error(error);
-
-        toast(
-            "Couldn't start game"
+        showScreen(
+            game
         );
+
+
+        if (
+            !interfaceBuilt
+        ) {
+
+            buildGameInterface();
+
+            interfaceBuilt =
+                true;
+        }
+
+
+        renderGame();
+
+
+        /*
+           IMPORTANT:
+           Keep polling alive.
+        */
+
+        startPolling();
+
+
+    } finally {
 
         startButton.disabled =
             false;
 
-        return;
+        startButton.textContent =
+            "START GAME";
     }
-
-
-    state =
-        newState;
-
-    stopPolling();
-
-    showScreen(game);
-
-    buildGameInterface();
-
-    renderGame();
 }
 
 
@@ -987,31 +1341,34 @@ function createGameState() {
     const hands = {};
 
 
-    players.forEach(player => {
+    players.forEach(
+        player => {
 
-        hands[player.id] =
-            [];
+            hands[player.id] =
+                [];
 
-        for (
-            let i = 0;
-            i < 7;
-            i++
-        ) {
 
-            hands[player.id].push(
-                deck.pop()
-            );
+            for (
+                let i = 0;
+                i < 7;
+                i++
+            ) {
+
+                hands[player.id].push(
+                    deck.pop()
+                );
+            }
         }
-    });
+    );
 
+
+    /*
+       Start with a non-wild card.
+    */
 
     let firstCard =
         deck.pop();
 
-
-    /*
-       Don't start on a wild.
-    */
 
     while (
         firstCard &&
@@ -1040,69 +1397,40 @@ function createGameState() {
 
         hands,
 
-        currentPlayerIndex: 0,
+        currentPlayerIndex:
+            0,
 
-        direction: 1,
+        direction:
+            1,
 
         currentColor:
             firstCard.color,
 
-        pendingDraw: 0,
+        pendingDraw:
+            0,
 
-        winner: null,
+        skipNext:
+            false,
+
+        pendingWild:
+            false,
+
+        winner:
+            null,
 
         lastAction:
             "Game started",
 
         uno: {},
 
-        started: true,
-
-        skipNext: false
-
+        started:
+            true
     };
 }
 
 
 /* =========================================================
-   SAVE STATE
-   ========================================================= */
-
-async function saveState() {
-
-    const {
-        error
-    } =
-        await supabaseClient
-            .from("rooms")
-            .update({
-
-                game_state: state
-
-            })
-            .eq(
-                "code",
-                roomCode
-            );
-
-
-    if (error) {
-
-        console.error(error);
-
-        toast(
-            "Connection problem"
-        );
-
-        return false;
-    }
-
-    return true;
-}
-
-
-/* =========================================================
-   BUILD FULL GAME INTERFACE
+   BUILD GAME UI
    ========================================================= */
 
 function buildGameInterface() {
@@ -1110,8 +1438,6 @@ function buildGameInterface() {
     game.innerHTML = `
 
         <div class="uno-app">
-
-            <!-- TOP BAR -->
 
             <div class="uno-topbar">
 
@@ -1136,20 +1462,15 @@ function buildGameInterface() {
             </div>
 
 
-            <!-- OPPONENTS -->
-
             <div
                 class="opponents-zone"
                 id="opponentsZone"
             ></div>
 
 
-            <!-- TABLE -->
-
             <div class="uno-table">
 
                 <div class="table-highlight"></div>
-
 
                 <div
                     class="center-message"
@@ -1195,23 +1516,14 @@ function buildGameInterface() {
             </div>
 
 
-            <!-- CURRENT COLOR -->
-
             <div
                 class="current-color"
                 id="currentColor"
             >
-
                 <span></span>
-
-                <b>
-                    RED
-                </b>
-
+                <b>RED</b>
             </div>
 
-
-            <!-- BOTTOM PLAYER -->
 
             <div class="bottom-player">
 
@@ -1259,15 +1571,11 @@ function buildGameInterface() {
             </div>
 
 
-            <!-- GAME INFO -->
-
             <div
                 class="last-action"
                 id="lastAction"
             ></div>
 
-
-            <!-- COLOR PICKER -->
 
             <div
                 class="color-overlay"
@@ -1283,29 +1591,29 @@ function buildGameInterface() {
                     <div class="color-wheel">
 
                         <button
-                            data-color="red"
                             class="choose-red"
+                            data-color="red"
                         >
                             RED
                         </button>
 
                         <button
-                            data-color="yellow"
                             class="choose-yellow"
+                            data-color="yellow"
                         >
                             YELLOW
                         </button>
 
                         <button
-                            data-color="green"
                             class="choose-green"
+                            data-color="green"
                         >
                             GREEN
                         </button>
 
                         <button
-                            data-color="blue"
                             class="choose-blue"
+                            data-color="blue"
                         >
                             BLUE
                         </button>
@@ -1316,8 +1624,6 @@ function buildGameInterface() {
 
             </div>
 
-
-            <!-- WINNER -->
 
             <div
                 class="winner-overlay"
@@ -1355,12 +1661,13 @@ function buildGameInterface() {
             </div>
 
         </div>
-
     `;
 
 
     document
-        .getElementById("newDrawButton")
+        .getElementById(
+            "newDrawButton"
+        )
         .addEventListener(
             "click",
             drawCard
@@ -1368,7 +1675,9 @@ function buildGameInterface() {
 
 
     document
-        .getElementById("newDrawPile")
+        .getElementById(
+            "newDrawPile"
+        )
         .addEventListener(
             "click",
             drawCard
@@ -1376,7 +1685,9 @@ function buildGameInterface() {
 
 
     document
-        .getElementById("newUnoButton")
+        .getElementById(
+            "newUnoButton"
+        )
         .addEventListener(
             "click",
             callUno
@@ -1384,7 +1695,9 @@ function buildGameInterface() {
 
 
     document
-        .getElementById("exitGame")
+        .getElementById(
+            "exitGame"
+        )
         .addEventListener(
             "click",
             leaveGame
@@ -1392,7 +1705,9 @@ function buildGameInterface() {
 
 
     document
-        .getElementById("winnerLeave")
+        .getElementById(
+            "winnerLeave"
+        )
         .addEventListener(
             "click",
             leaveGame
@@ -1401,21 +1716,22 @@ function buildGameInterface() {
 
     document
         .querySelectorAll(
-            ".color-box button"
+            ".color-wheel button"
         )
-        .forEach(button => {
+        .forEach(
+            button => {
 
-            button.addEventListener(
-                "click",
-                () => {
+                button.addEventListener(
+                    "click",
+                    () => {
 
-                    chooseColor(
-                        button.dataset.color
-                    );
-
-                }
-            );
-        });
+                        chooseColor(
+                            button.dataset.color
+                        );
+                    }
+                );
+            }
+        );
 }
 
 
@@ -1446,6 +1762,8 @@ function renderGame() {
     renderLastAction();
 
     renderWinner();
+
+    renderControls();
 }
 
 
@@ -1465,6 +1783,11 @@ function renderMyPlayer() {
         return;
 
 
+    const hand =
+        state.hands[playerId] ||
+        [];
+
+
     element.innerHTML = `
 
         <div class="my-avatar">
@@ -1476,7 +1799,7 @@ function renderMyPlayer() {
         </div>
 
         <div class="my-card-count">
-            ${(state.hands[playerId] || []).length}
+            ${hand.length}
         </div>
 
     `;
@@ -1503,113 +1826,127 @@ function renderOpponents() {
         "";
 
 
-    const opponents =
-        players.filter(
+    players
+        .filter(
             p =>
                 p.id !== playerId
-        );
+        )
+        .forEach(
+            player => {
+
+                const hand =
+                    state.hands[
+                        player.id
+                    ] || [];
 
 
-    opponents.forEach(
-        (player, index) => {
-
-            const hand =
-                state.hands[player.id] ||
-                [];
+                const current =
+                    players[
+                        state.currentPlayerIndex
+                    ];
 
 
-            const isTurn =
-                players[
-                    state.currentPlayerIndex
-                ]?.id === player.id;
+                const isTurn =
+                    current &&
+                    current.id ===
+                    player.id;
 
 
-            const opponent =
-                document.createElement(
-                    "div"
-                );
+                const element =
+                    document.createElement(
+                        "div"
+                    );
 
 
-            opponent.className =
-                "opponent-seat";
+                element.className =
+                    "opponent-seat";
 
 
-            if (isTurn) {
+                if (isTurn) {
 
-                opponent.classList.add(
-                    "opponent-turn"
-                );
-            }
-
-
-            let backs = "";
+                    element.classList.add(
+                        "opponent-turn"
+                    );
+                }
 
 
-            const numberOfBacks =
-                Math.min(
-                    hand.length,
-                    6
-                );
+                let cards = "";
 
 
-            for (
-                let i = 0;
-                i < numberOfBacks;
-                i++
-            ) {
+                const visible =
+                    Math.min(
+                        hand.length,
+                        6
+                    );
 
-                backs += `
 
-                    <div
-                        class="mini-card-back"
-                        style="
-                            --card-index:${i};
-                        "
-                    >
-                        <span>UNO</span>
+                for (
+                    let i = 0;
+                    i < visible;
+                    i++
+                ) {
+
+                    cards += `
+
+                        <div
+                            class="mini-card-back"
+                            style="
+                                --card-index:${i};
+                            "
+                        >
+
+                            <span>
+                                UNO
+                            </span>
+
+                        </div>
+
+                    `;
+                }
+
+
+                element.innerHTML = `
+
+                    <div class="opponent-avatar">
+
+                        ${getAvatar(player.name)}
+
+                        ${
+                            isTurn
+                            ? `
+                                <div class="turn-ring">
+                                </div>
+                            `
+                            : ""
+                        }
+
+                    </div>
+
+                    <div class="opponent-name">
+                        ${escapeHTML(player.name)}
+                    </div>
+
+                    <div class="opponent-hand">
+                        ${cards}
+                    </div>
+
+                    <div class="opponent-count">
+                        ${hand.length}
                     </div>
 
                 `;
+
+
+                container.appendChild(
+                    element
+                );
             }
-
-
-            opponent.innerHTML = `
-
-                <div class="opponent-avatar">
-                    ${getAvatar(player.name)}
-
-                    ${
-                        isTurn
-                        ? `<div class="turn-ring"></div>`
-                        : ""
-                    }
-                </div>
-
-                <div class="opponent-name">
-                    ${escapeHTML(player.name)}
-                </div>
-
-                <div class="opponent-hand">
-                    ${backs}
-                </div>
-
-                <div class="opponent-count">
-                    ${hand.length}
-                </div>
-
-            `;
-
-
-            container.appendChild(
-                opponent
-            );
-        }
-    );
+        );
 }
 
 
 /* =========================================================
-   MY HAND
+   HAND
    ========================================================= */
 
 function renderHand() {
@@ -1633,19 +1970,20 @@ function renderHand() {
         [];
 
 
-    const currentPlayer =
+    const current =
         players[
             state.currentPlayerIndex
         ];
 
 
     const myTurn =
-        currentPlayer?.id ===
+        current &&
+        current.id ===
         playerId;
 
 
     hand.forEach(
-        (card, index) => {
+        (playedCard, index) => {
 
             const element =
                 document.createElement(
@@ -1654,14 +1992,17 @@ function renderHand() {
 
 
             element.className =
-                `uno-card
-                 card-${card.color}`;
+                `uno-card card-${playedCard.color}`;
 
 
-            if (
+            const playable =
                 myTurn &&
-                canPlay(card)
-            ) {
+                canPlay(
+                    playedCard
+                );
+
+
+            if (playable) {
 
                 element.classList.add(
                     "card-playable"
@@ -1684,19 +2025,19 @@ function renderHand() {
             element.innerHTML = `
 
                 <span class="card-corner top">
-                    ${displayValue(card.value)}
+                    ${cardText(playedCard.value)}
                 </span>
 
                 <span class="card-oval">
 
                     <span class="card-main">
-                        ${displayValue(card.value)}
+                        ${cardText(playedCard.value)}
                     </span>
 
                 </span>
 
                 <span class="card-corner bottom">
-                    ${displayValue(card.value)}
+                    ${cardText(playedCard.value)}
                 </span>
 
             `;
@@ -1716,19 +2057,19 @@ function renderHand() {
                     }
 
 
-                    if (
-                        !canPlay(card)
-                    ) {
+                    if (!playable) {
 
                         toast(
-                            "You can't play this card"
+                            "You can't play that"
                         );
 
                         return;
                     }
 
 
-                    playCard(index);
+                    playCard(
+                        index
+                    );
                 }
             );
 
@@ -1763,48 +2104,39 @@ function renderDiscard() {
         ];
 
 
-    container.innerHTML =
-        "";
-
-
     if (!top)
         return;
 
 
-    const element =
-        document.createElement(
-            "div"
-        );
+    container.innerHTML = `
 
+        <div
+            class="
+                uno-card
+                center-card
+                card-${top.color}
+            "
+        >
 
-    element.className =
-        `uno-card center-card card-${top.color}`;
-
-
-    element.innerHTML = `
-
-        <span class="card-corner top">
-            ${displayValue(top.value)}
-        </span>
-
-        <span class="card-oval">
-
-            <span class="card-main">
-                ${displayValue(top.value)}
+            <span class="card-corner top">
+                ${cardText(top.value)}
             </span>
 
-        </span>
+            <span class="card-oval">
 
-        <span class="card-corner bottom">
-            ${displayValue(top.value)}
-        </span>
+                <span class="card-main">
+                    ${cardText(top.value)}
+                </span>
+
+            </span>
+
+            <span class="card-corner bottom">
+                ${cardText(top.value)}
+            </span>
+
+        </div>
 
     `;
-
-
-    container.appendChild(
-        element
-    );
 }
 
 
@@ -1820,6 +2152,15 @@ function renderTurn() {
         ];
 
 
+    if (!current)
+        return;
+
+
+    const mine =
+        current.id ===
+        playerId;
+
+
     const status =
         document.getElementById(
             "gameStatus"
@@ -1830,14 +2171,6 @@ function renderTurn() {
         document.getElementById(
             "centerMessage"
         );
-
-
-    if (!current)
-        return;
-
-
-    const mine =
-        current.id === playerId;
 
 
     if (mine) {
@@ -1853,7 +2186,7 @@ function renderTurn() {
             "YOUR TURN";
 
         center.className =
-            "center-message my-turn-message";
+            "center-message my-turn";
 
     } else {
 
@@ -1950,12 +2283,64 @@ function renderLastAction() {
 
 
     element.textContent =
-        state.lastAction || "";
+        state.lastAction ||
+        "";
 }
 
 
 /* =========================================================
-   PLAYABILITY
+   CONTROLS
+   ========================================================= */
+
+function renderControls() {
+
+    const draw =
+        document.getElementById(
+            "newDrawButton"
+        );
+
+
+    const uno =
+        document.getElementById(
+            "newUnoButton"
+        );
+
+
+    if (!draw || !uno)
+        return;
+
+
+    const current =
+        players[
+            state.currentPlayerIndex
+        ];
+
+
+    const myTurn =
+        current &&
+        current.id ===
+        playerId;
+
+
+    draw.disabled =
+        !myTurn ||
+        !!state.winner;
+
+
+    const hand =
+        state.hands[playerId] ||
+        [];
+
+
+    uno.disabled =
+        !myTurn ||
+        !!state.winner ||
+        hand.length > 2;
+}
+
+
+/* =========================================================
+   CAN PLAY
    ========================================================= */
 
 function canPlay(card) {
@@ -1963,6 +2348,10 @@ function canPlay(card) {
     if (!state)
         return false;
 
+
+    /*
+       Stacking draw cards.
+    */
 
     if (
         state.pendingDraw > 0
@@ -2052,9 +2441,7 @@ async function playCard(index) {
         return;
 
 
-    if (
-        !canPlay(played)
-    ) {
+    if (!canPlay(played)) {
 
         toast(
             "You can't play that"
@@ -2064,11 +2451,19 @@ async function playCard(index) {
     }
 
 
+    /*
+       Remove from hand.
+    */
+
     hand.splice(
         index,
         1
     );
 
+
+    /*
+       Put onto discard.
+    */
 
     state.discard.push(
         played
@@ -2076,7 +2471,7 @@ async function playCard(index) {
 
 
     state.lastAction =
-        `${playerName} played ${displayValue(played.value)}`;
+        `${playerName} played ${cardText(played.value)}`;
 
 
     /*
@@ -2097,6 +2492,12 @@ async function playCard(index) {
 
         await saveState();
 
+        lastRenderedState =
+            JSON.stringify(
+                state
+            );
+
+
         renderGame();
 
         return;
@@ -2104,7 +2505,7 @@ async function playCard(index) {
 
 
     /*
-       Wild
+       Wild card.
     */
 
     if (
@@ -2115,7 +2516,23 @@ async function playCard(index) {
             true;
 
 
+        /*
+           Save immediately so
+           other devices know a
+           wild was played.
+        */
+
+        await saveState();
+
+
+        lastRenderedState =
+            JSON.stringify(
+                state
+            );
+
+
         renderGame();
+
 
         openColorPicker();
 
@@ -2124,7 +2541,7 @@ async function playCard(index) {
 
 
     /*
-       ACTION
+       Normal action.
     */
 
     applyAction(
@@ -2137,75 +2554,79 @@ async function playCard(index) {
 
     await saveState();
 
+
+    lastRenderedState =
+        JSON.stringify(
+            state
+        );
+
+
     renderGame();
 }
 
 
 /* =========================================================
-   ACTION EFFECT
+   ACTION
    ========================================================= */
 
 function applyAction(card) {
 
-    if (
-        card.value === "+2"
+    switch (
+        card.value
     ) {
 
-        state.pendingDraw +=
-            2;
-    }
+        case "+2":
+
+            state.pendingDraw += 2;
+
+            break;
 
 
-    if (
-        card.value === "+4"
-    ) {
+        case "+4":
 
-        state.pendingDraw +=
-            4;
-    }
+            state.pendingDraw += 4;
+
+            break;
 
 
-    if (
-        card.value === "+10"
-    ) {
+        case "+10":
 
-        state.pendingDraw +=
-            10;
-    }
+            state.pendingDraw += 10;
+
+            break;
 
 
-    if (
-        card.value === "+20"
-    ) {
+        case "+20":
 
-        state.pendingDraw +=
-            20;
-    }
+            state.pendingDraw += 20;
+
+            break;
 
 
-    if (
-        card.value === "skip"
-    ) {
+        case "skip":
 
-        state.skipNext = true;
-    }
+            state.skipNext =
+                true;
+
+            break;
 
 
-    if (
-        card.value === "reverse"
-    ) {
+        case "reverse":
 
-        if (
-            players.length === 2
-        ) {
+            if (
+                players.length === 2
+            ) {
 
-            state.skipNext = true;
+                state.skipNext =
+                    true;
 
-        } else {
+            } else {
 
-            state.direction *=
-                -1;
-        }
+                state.direction *=
+                    -1;
+            }
+
+            break;
     }
 }
 
@@ -2216,14 +2637,16 @@ function applyAction(card) {
 
 function nextTurn() {
 
-    let steps = 1;
+    let steps =
+        1;
 
 
     if (
         state.skipNext
     ) {
 
-        steps = 2;
+        steps =
+            2;
 
         state.skipNext =
             false;
@@ -2274,7 +2697,8 @@ async function drawCard() {
 
 
     if (
-        current?.id !== playerId
+        !current ||
+        current.id !== playerId
     ) {
 
         toast(
@@ -2291,10 +2715,12 @@ async function drawCard() {
             : 1;
 
 
-    state.pendingDraw = 0;
+    state.pendingDraw =
+        0;
 
 
-    let drawn = 0;
+    let drawn =
+        0;
 
 
     for (
@@ -2317,7 +2743,9 @@ async function drawCard() {
             break;
 
 
-        state.hands[playerId].push(
+        state.hands[
+            playerId
+        ].push(
             state.deck.pop()
         );
 
@@ -2335,6 +2763,13 @@ async function drawCard() {
 
     await saveState();
 
+
+    lastRenderedState =
+        JSON.stringify(
+            state
+        );
+
+
     renderGame();
 
 
@@ -2345,7 +2780,7 @@ async function drawCard() {
 
 
 /* =========================================================
-   REFILL
+   REFILL DECK
    ========================================================= */
 
 function refillDeck() {
@@ -2362,7 +2797,7 @@ function refillDeck() {
         ];
 
 
-    const old =
+    const oldCards =
         state.discard.slice(
             0,
             -1
@@ -2370,7 +2805,9 @@ function refillDeck() {
 
 
     state.deck =
-        shuffle(old);
+        shuffle(
+            oldCards
+        );
 
 
     state.discard =
@@ -2395,7 +2832,8 @@ async function callUno() {
 
 
     if (
-        current?.id !== playerId
+        !current ||
+        current.id !== playerId
     ) {
 
         toast(
@@ -2432,6 +2870,12 @@ async function callUno() {
 
 
     await saveState();
+
+
+    lastRenderedState =
+        JSON.stringify(
+            state
+        );
 
 
     const button =
@@ -2485,10 +2929,12 @@ function openColorPicker() {
         );
 
 
-    if (overlay)
+    if (overlay) {
+
         overlay.classList.add(
             "open"
         );
+    }
 }
 
 
@@ -2516,10 +2962,12 @@ async function chooseColor(color) {
         );
 
 
-    if (overlay)
+    if (overlay) {
+
         overlay.classList.remove(
             "open"
         );
+    }
 
 
     state.lastAction =
@@ -2530,6 +2978,13 @@ async function chooseColor(color) {
 
 
     await saveState();
+
+
+    lastRenderedState =
+        JSON.stringify(
+            state
+        );
+
 
     renderGame();
 }
@@ -2586,7 +3041,8 @@ function renderWinner() {
 
 
     if (
-        winner.id === playerId
+        winner.id ===
+        playerId
     ) {
 
         title.textContent =
@@ -2620,17 +3076,20 @@ async function leaveGame() {
     stopPolling();
 
 
-    await supabaseClient
-        .from("players")
-        .delete()
-        .eq(
-            "id",
-            playerId
-        )
-        .eq(
-            "room_code",
-            roomCode
-        );
+    if (roomCode) {
+
+        await supabaseClient
+            .from("players")
+            .delete()
+            .eq(
+                "id",
+                playerId
+            )
+            .eq(
+                "room_code",
+                roomCode
+            );
+    }
 
 
     roomCode = "";
@@ -2643,8 +3102,16 @@ async function leaveGame() {
 
     state = null;
 
+    interfaceBuilt =
+        false;
 
-    showScreen(home);
+    lastRenderedState =
+        "";
+
+
+    showScreen(
+        home
+    );
 }
 
 
@@ -2662,7 +3129,7 @@ if (leaveButton) {
 
 
 /* =========================================================
-   COPY CODE
+   COPY ROOM CODE
    ========================================================= */
 
 if (copyButton) {
@@ -2695,32 +3162,42 @@ if (copyButton) {
 
 
 /* =========================================================
-   ESCAPE HTML
+   ENTER KEY
    ========================================================= */
 
-function escapeHTML(text) {
+if (nameInput) {
 
-    return String(text)
-        .replaceAll(
-            "&",
-            "&amp;"
-        )
-        .replaceAll(
-            "<",
-            "&lt;"
-        )
-        .replaceAll(
-            ">",
-            "&gt;"
-        )
-        .replaceAll(
-            '"',
-            "&quot;"
-        )
-        .replaceAll(
-            "'",
-            "&#039;"
-        );
+    nameInput.addEventListener(
+        "keydown",
+        event => {
+
+            if (
+                event.key ===
+                "Enter"
+            ) {
+
+                codeInput.focus();
+            }
+        }
+    );
+}
+
+
+if (codeInput) {
+
+    codeInput.addEventListener(
+        "keydown",
+        event => {
+
+            if (
+                event.key ===
+                "Enter"
+            ) {
+
+                joinButton.click();
+            }
+        }
+    );
 }
 
 
@@ -2737,18 +3214,55 @@ document.addEventListener(
             roomCode
         ) {
 
-            await sync();
+            await syncEverything();
         }
     }
 );
 
 
 /* =========================================================
+   ESCAPE HTML
+   ========================================================= */
+
+function escapeHTML(text) {
+
+    return String(text)
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+}
+
+
+/* =========================================================
    INITIAL
    ========================================================= */
 
-showScreen(home);
+showScreen(
+    home
+);
 
 console.log(
-    "UNO Friends full app loaded"
+    "UNO Friends multiplayer loaded"
 );

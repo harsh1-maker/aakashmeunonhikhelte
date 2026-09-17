@@ -27,6 +27,8 @@ let isHost = false;
 let lobbyTimer = null;
 let gameTimer = null;
 
+let waitingForColor = false;
+
 
 /* =========================================
    BASIC UI
@@ -53,7 +55,10 @@ function toast(message) {
     const box =
         document.getElementById("toast");
 
+    if (!box) return;
+
     box.textContent = message;
+
     box.classList.add("show");
 
     setTimeout(() => {
@@ -89,6 +94,8 @@ function generateRoomCode() {
 
 async function getRoom() {
 
+    if (!roomCode) return null;
+
     const { data, error } =
         await supabaseClient
             .from("rooms")
@@ -97,7 +104,12 @@ async function getRoom() {
             .maybeSingle();
 
     if (error) {
-        console.error(error);
+
+        console.error(
+            "ROOM ERROR:",
+            error
+        );
+
         return null;
     }
 
@@ -106,6 +118,8 @@ async function getRoom() {
 
 
 async function getPlayers() {
+
+    if (!roomCode) return [];
 
     const { data, error } =
         await supabaseClient
@@ -118,10 +132,12 @@ async function getPlayers() {
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "PLAYERS ERROR:",
+            error
+        );
 
         return [];
-
     }
 
     return data || [];
@@ -155,6 +171,7 @@ async function refreshLobby() {
         await loadGame();
 
     }
+
 }
 
 
@@ -170,10 +187,18 @@ function renderPlayers(players) {
         document.getElementById("start");
 
 
+    if (!container) return;
+
+
     container.innerHTML = "";
 
-    count.textContent =
-        ` (${players.length}/6)`;
+
+    if (count) {
+
+        count.textContent =
+            ` (${players.length}/6)`;
+
+    }
 
 
     players.forEach(player => {
@@ -181,7 +206,8 @@ function renderPlayers(players) {
         const row =
             document.createElement("div");
 
-        row.className = "player";
+        row.className =
+            "player";
 
 
         const name =
@@ -195,15 +221,21 @@ function renderPlayers(players) {
             document.createElement("span");
 
         crown.textContent =
-            player.is_host ? " 👑" : "";
+            player.is_host
+                ? " 👑"
+                : "";
 
 
         row.appendChild(name);
+
         row.appendChild(crown);
 
         container.appendChild(row);
 
     });
+
+
+    if (!start) return;
 
 
     if (isHost) {
@@ -288,9 +320,13 @@ async function createRoom() {
             await supabaseClient
                 .from("rooms")
                 .insert({
+
                     code: roomCode,
+
                     game_started: false,
+
                     game_state: null
+
                 });
 
 
@@ -334,7 +370,10 @@ async function createRoom() {
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "CREATE PLAYER ERROR:",
+            error
+        );
 
         toast(
             "Could not create player."
@@ -468,7 +507,10 @@ async function joinRoom() {
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "JOIN ERROR:",
+            error
+        );
 
         toast(
             "Could not join room."
@@ -514,132 +556,180 @@ function createDeck() {
     ];
 
 
-    /* Number cards */
+    /* NUMBER CARDS */
 
     colors.forEach(color => {
 
         deck.push({
+
             color,
+
             type: "number",
+
             value: 0
+
         });
 
 
         for (let n = 1; n <= 9; n++) {
 
             deck.push({
+
                 color,
+
                 type: "number",
+
                 value: n
+
             });
 
             deck.push({
+
                 color,
+
                 type: "number",
+
                 value: n
+
             });
 
         }
 
 
-        /* Skip */
+        /* SKIP */
 
         deck.push({
+
             color,
+
             type: "skip",
+
             value: "SKIP"
+
         });
 
         deck.push({
+
             color,
+
             type: "skip",
+
             value: "SKIP"
+
         });
 
 
-        /* Reverse */
+        /* REVERSE */
 
         deck.push({
+
             color,
+
             type: "reverse",
+
             value: "REV"
+
         });
 
         deck.push({
+
             color,
+
             type: "reverse",
+
             value: "REV"
+
         });
 
 
         /* +2 */
 
         deck.push({
+
             color,
+
             type: "draw2",
+
             value: "+2"
+
         });
 
         deck.push({
+
             color,
+
             type: "draw2",
+
             value: "+2"
+
         });
 
     });
 
 
-    /* Wild */
+    /* WILD */
 
     for (let i = 0; i < 4; i++) {
 
         deck.push({
+
             color: "wild",
+
             type: "wild",
+
             value: "WILD"
+
         });
 
     }
 
 
-    /* Wild +4 */
+    /* +4 */
 
     for (let i = 0; i < 4; i++) {
 
         deck.push({
+
             color: "wild",
+
             type: "draw4",
+
             value: "+4"
+
         });
 
     }
 
 
-    /* =====================================
-       CUSTOM +10
-    ===================================== */
+    /* CUSTOM +10 */
 
     for (let i = 0; i < 4; i++) {
 
         deck.push({
+
             color: "wild",
+
             type: "draw10",
+
             value: "+10"
+
         });
 
     }
 
 
-    /* =====================================
-       CUSTOM +20
-    ===================================== */
+    /* CUSTOM +20 */
 
     for (let i = 0; i < 4; i++) {
 
         deck.push({
+
             color: "wild",
+
             type: "draw20",
+
             value: "+20"
+
         });
 
     }
@@ -720,7 +810,7 @@ async function initializeGame() {
     });
 
 
-    /* Deal 7 cards */
+    /* DEAL 7 CARDS */
 
     for (let i = 0; i < 7; i++) {
 
@@ -735,7 +825,7 @@ async function initializeGame() {
     }
 
 
-    /* First discard must be a normal card */
+    /* FIRST DISCARD */
 
     let firstCard =
         deck.pop();
@@ -748,7 +838,9 @@ async function initializeGame() {
         firstCard.type === "draw20"
     ) {
 
-        deck.unshift(firstCard);
+        deck.unshift(
+            firstCard
+        );
 
         firstCard =
             deck.pop();
@@ -760,32 +852,48 @@ async function initializeGame() {
 
         players:
             players.map(p => ({
+
                 id: p.id,
+
                 name: p.name
+
             })),
+
 
         deck,
 
+
         hands,
+
 
         discard: [
             firstCard
         ],
 
+
         currentPlayer: 0,
 
+
         direction: 1,
+
 
         currentColor:
             firstCard.color,
 
+
         winner: null,
+
 
         started: true,
 
+
         unoCalled: {},
 
-        pendingDraw: 0
+
+        pendingDraw: 0,
+
+
+        pendingDrawType: null
 
     };
 
@@ -809,7 +917,10 @@ async function initializeGame() {
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "GAME INIT ERROR:",
+            error
+        );
 
         toast(
             "Could not start game."
@@ -871,8 +982,6 @@ async function startGame() {
     const room =
         await getRoom();
 
-
-    /* Don't initialize twice */
 
     if (
         room &&
@@ -992,6 +1101,9 @@ function renderGame(state) {
         ];
 
 
+    if (!currentPlayer) return;
+
+
     const turn =
         document.getElementById("turn");
 
@@ -1009,7 +1121,7 @@ function renderGame(state) {
         ) {
 
             turn.textContent =
-                "YOUR TURN";
+                "YOUR TURN 🔥";
 
         } else {
 
@@ -1022,16 +1134,27 @@ function renderGame(state) {
     }
 
 
-    document.getElementById("color")
-        .textContent =
-        "Color: " +
-        state.currentColor;
+    const color =
+        document.getElementById("color");
+
+
+    if (color) {
+
+        color.textContent =
+            "Color: " +
+            state.currentColor;
+
+    }
+
+
+    const topCard =
+        state.discard[
+            state.discard.length - 1
+        ];
 
 
     renderTopCard(
-        state.discard[
-            state.discard.length - 1
-        ]
+        topCard
     );
 
 
@@ -1046,16 +1169,35 @@ function renderGame(state) {
     );
 
 
-    document.getElementById("draw")
-        .disabled =
-        state.winner !== null ||
-        currentPlayer.id !== playerId;
+    const draw =
+        document.getElementById("draw");
+
+    const uno =
+        document.getElementById("uno");
 
 
-    document.getElementById("uno")
-        .disabled =
-        state.winner !== null ||
-        currentPlayer.id !== playerId;
+    const myTurn =
+        currentPlayer.id === playerId;
+
+
+    if (draw) {
+
+        draw.disabled =
+            state.winner !== null ||
+            !myTurn ||
+            waitingForColor;
+
+    }
+
+
+    if (uno) {
+
+        uno.disabled =
+            state.winner !== null ||
+            !myTurn ||
+            waitingForColor;
+
+    }
 
 }
 
@@ -1068,6 +1210,9 @@ function renderTopCard(card) {
 
     const top =
         document.getElementById("topCard");
+
+
+    if (!top || !card) return;
 
 
     top.className =
@@ -1098,7 +1243,27 @@ function renderHand(
         document.getElementById("hand");
 
 
+    if (!container) return;
+
+
     container.innerHTML = "";
+
+
+    const top =
+        state.discard[
+            state.discard.length - 1
+        ];
+
+
+    const current =
+        state.players[
+            state.currentPlayer
+        ];
+
+
+    const myTurn =
+        current &&
+        current.id === playerId;
 
 
     hand.forEach((card, index) => {
@@ -1120,22 +1285,25 @@ function renderHand(
             card.value;
 
 
-        const top =
-            state.discard[
-                state.discard.length - 1
-            ];
-
-
-        if (
-            state.players[
-                state.currentPlayer
-            ].id !== playerId ||
-            !canPlay(
+        const playable =
+            myTurn &&
+            !waitingForColor &&
+            canPlay(
                 card,
                 top,
                 state.currentColor
-            )
-        ) {
+            );
+
+
+        if (playable) {
+
+            /* POP + GLOW */
+
+            button.classList.add(
+                "playable"
+            );
+
+        } else {
 
             button.classList.add(
                 "disabled"
@@ -1148,13 +1316,48 @@ function renderHand(
             "click",
             () => {
 
+                if (!myTurn) {
+
+                    toast(
+                        "Wait for your turn!"
+                    );
+
+                    return;
+
+                }
+
+
+                if (waitingForColor) {
+
+                    toast(
+                        "Choose a color first!"
+                    );
+
+                    return;
+
+                }
+
+
+                if (!playable) {
+
+                    toast(
+                        "You can't play that card!"
+                    );
+
+                    return;
+
+                }
+
+
                 playCard(index);
 
             }
         );
 
 
-        container.appendChild(button);
+        container.appendChild(
+            button
+        );
 
     });
 
@@ -1169,6 +1372,9 @@ function renderOpponents(state) {
 
     const container =
         document.getElementById("opponents");
+
+
+    if (!container) return;
 
 
     container.innerHTML = "";
@@ -1202,826 +1408,64 @@ function renderOpponents(state) {
             }
 
 
+            /* NAME */
+
+            const name =
+                document.createElement("div");
+
+            name.textContent =
+                player.name;
+
+            name.style.fontWeight =
+                "900";
+
+
+            /* CARD COUNT */
+
             const count =
                 state.hands[player.id]
-                    ? state.hands[player.id]
-                        .length
+                    ? state.hands[player.id].length
                     : 0;
 
 
-            div.textContent =
-                player.name +
-                " • " +
-                count +
-                " cards";
+            const cardCount =
+                document.createElement("div");
 
+            cardCount.textContent =
+                count + " cards";
 
-            container.appendChild(div);
+            cardCount.style.fontSize =
+                "11px";
 
-        }
-    );
+            cardCount.style.opacity =
+                "0.75";
 
-}
 
+            /* HIDDEN CARDS */
 
-/* =========================================
-   VALID CARD
-========================================= */
+            const cards =
+                document.createElement("div");
 
-function canPlay(
-    card,
-    top,
-    currentColor
-) {
+            cards.className =
+                "opponent-cards";
 
-    if (
-        card.color === "wild"
-    ) {
 
-        return true;
+            /*
+             * ONLY THE NUMBER OF CARDS
+             * IS USED HERE.
+             *
+             * ACTUAL CARD VALUES ARE
+             * NEVER RENDERED.
+             */
 
-    }
+            const visibleCards =
+                Math.min(
+                    count,
+                    10
+                );
 
 
-    if (
-        card.color === currentColor
-    ) {
-
-        return true;
-
-    }
-
-
-    if (
-        card.type === "number" &&
-        top.type === "number" &&
-        card.value === top.value
-    ) {
-
-        return true;
-
-    }
-
-
-    if (
-        card.type === top.type &&
-        card.type !== "number"
-    ) {
-
-        return true;
-
-    }
-
-
-    return false;
-
-}
-
-
-/* =========================================
-   PLAY CARD
-========================================= */
-
-async function playCard(index) {
-
-    const room =
-        await getRoom();
-
-
-    if (
-        !room ||
-        !room.game_state
-    ) {
-
-        return;
-
-    }
-
-
-    const state =
-        room.game_state;
-
-
-    if (state.winner) return;
-
-
-    const current =
-        state.players[
-            state.currentPlayer
-        ];
-
-
-    if (
-        current.id !== playerId
-    ) {
-
-        toast(
-            "Not your turn!"
-        );
-
-        return;
-
-    }
-
-
-    const hand =
-        state.hands[playerId];
-
-
-    const card =
-        hand[index];
-
-
-    if (!card) return;
-
-
-    const top =
-        state.discard[
-            state.discard.length - 1
-        ];
-
-
-    if (
-        !canPlay(
-            card,
-            top,
-            state.currentColor
-        )
-    ) {
-
-        toast(
-            "You can't play that card!"
-        );
-
-        return;
-
-    }
-
-
-    /* Remove from hand */
-
-    hand.splice(
-        index,
-        1
-    );
-
-
-    /* Put on discard */
-
-    state.discard.push(
-        card
-    );
-
-
-    /* UNO state */
-
-    state.unoCalled[playerId] =
-        false;
-
-
-    /* Winner */
-
-    if (hand.length === 0) {
-
-        state.winner = {
-
-            id: playerId,
-
-            name:
-                state.players.find(
-                    p =>
-                        p.id === playerId
-                ).name
-
-        };
-
-
-        await saveGame(
-            state
-        );
-
-        return;
-
-    }
-
-
-    /* Wild cards */
-
-    if (
-        card.type === "wild" ||
-        card.type === "draw4" ||
-        card.type === "draw10" ||
-        card.type === "draw20"
-    ) {
-
-        await saveGame(
-            state
-        );
-
-
-        openColorPicker();
-
-        return;
-
-    }
-
-
-    /* Set color */
-
-    state.currentColor =
-        card.color;
-
-
-    /* Special cards */
-
-    let skip = false;
-
-
-    if (
-        card.type === "skip"
-    ) {
-
-        skip = true;
-
-    }
-
-
-    if (
-        card.type === "reverse"
-    ) {
-
-        state.direction *= -1;
-
-
-        if (
-            state.players.length === 2
-        ) {
-
-            skip = true;
-
-        }
-
-    }
-
-
-    if (
-        card.type === "draw2"
-    ) {
-
-        state.pendingDraw = 2;
-
-        skip = true;
-
-    }
-
-
-    if (
-        card.type === "draw4"
-    ) {
-
-        state.pendingDraw = 4;
-
-        skip = true;
-
-    }
-
-
-    if (
-        card.type === "draw10"
-    ) {
-
-        state.pendingDraw = 10;
-
-        skip = true;
-
-    }
-
-
-    if (
-        card.type === "draw20"
-    ) {
-
-        state.pendingDraw = 20;
-
-        skip = true;
-
-    }
-
-
-    advanceTurn(
-        state,
-        skip
-    );
-
-
-    await saveGame(
-        state
-    );
-
-}
-
-
-/* =========================================
-   ADVANCE TURN
-========================================= */
-
-function advanceTurn(
-    state,
-    skip = false
-) {
-
-    const total =
-        state.players.length;
-
-
-    let next =
-        state.currentPlayer;
-
-
-    next +=
-        state.direction;
-
-
-    if (next < 0) {
-
-        next =
-            total - 1;
-
-    }
-
-
-    if (next >= total) {
-
-        next = 0;
-
-    }
-
-
-    if (skip) {
-
-        next +=
-            state.direction;
-
-
-        if (next < 0) {
-
-            next =
-                total - 1;
-
-        }
-
-
-        if (next >= total) {
-
-            next = 0;
-
-        }
-
-    }
-
-
-    state.currentPlayer =
-        next;
-
-
-    state.currentColor =
-        state.discard[
-            state.discard.length - 1
-        ].color;
-
-}
-
-
-/* =========================================
-   DRAW CARD
-========================================= */
-
-async function drawCard() {
-
-    const room =
-        await getRoom();
-
-
-    if (
-        !room ||
-        !room.game_state
-    ) return;
-
-
-    const state =
-        room.game_state;
-
-
-    if (state.winner) return;
-
-
-    const current =
-        state.players[
-            state.currentPlayer
-        ];
-
-
-    if (
-        current.id !== playerId
-    ) {
-
-        toast(
-            "Not your turn!"
-        );
-
-        return;
-
-    }
-
-
-    const amount =
-        state.pendingDraw > 0
-            ? state.pendingDraw
-            : 1;
-
-
-    const hand =
-        state.hands[playerId];
-
-
-    for (
-        let i = 0;
-        i < amount;
-        i++
-    ) {
-
-        if (
-            state.deck.length === 0
-        ) {
-
-            refillDeck(
-                state
-            );
-
-        }
-
-
-        if (
-            state.deck.length > 0
-        ) {
-
-            hand.push(
-                state.deck.pop()
-            );
-
-        }
-
-    }
-
-
-    state.pendingDraw = 0;
-
-
-    advanceTurn(
-        state
-    );
-
-
-    await saveGame(
-        state
-    );
-
-}
-
-
-/* =========================================
-   REFILL DECK
-========================================= */
-
-function refillDeck(state) {
-
-    if (
-        state.discard.length <= 1
-    ) return;
-
-
-    const top =
-        state.discard[
-            state.discard.length - 1
-        ];
-
-
-    const oldDiscard =
-        state.discard.slice(
-            0,
-            -1
-        );
-
-
-    state.deck =
-        shuffle(
-            oldDiscard
-        );
-
-
-    state.discard = [
-        top
-    ];
-
-}
-
-
-/* =========================================
-   UNO
-========================================= */
-
-async function callUNO() {
-
-    const room =
-        await getRoom();
-
-
-    if (
-        !room ||
-        !room.game_state
-    ) return;
-
-
-    const state =
-        room.game_state;
-
-
-    const hand =
-        state.hands[playerId];
-
-
-    if (
-        hand &&
-        hand.length === 1
-    ) {
-
-        state.unoCalled[playerId] =
-            true;
-
-
-        toast(
-            "UNO! 🔥"
-        );
-
-
-        await saveGame(
-            state
-        );
-
-    } else {
-
-        toast(
-            "You can only call UNO with 1 card!"
-        );
-
-    }
-
-}
-
-
-/* =========================================
-   SAVE GAME
-========================================= */
-
-async function saveGame(state) {
-
-    const { error } =
-        await supabaseClient
-            .from("rooms")
-            .update({
-                game_state: state
-            })
-            .eq(
-                "code",
-                roomCode
-            );
-
-
-    if (error) {
-
-        console.error(
-            "SAVE GAME ERROR:",
-            error
-        );
-
-        toast(
-            "Game update failed."
-        );
-
-    }
-
-}
-
-
-/* =========================================
-   COLOR PICKER
-========================================= */
-
-function openColorPicker() {
-
-    document.getElementById("modal")
-        .classList.remove("hidden");
-
-}
-
-
-document.querySelectorAll(
-    "[data-color]"
-).forEach(button => {
-
-    button.addEventListener(
-        "click",
-        async () => {
-
-            const color =
-                button.dataset.color;
-
-
-            const room =
-                await getRoom();
-
-
-            if (
-                !room ||
-                !room.game_state
-            ) return;
-
-
-            const state =
-                room.game_state;
-
-
-            const last =
-                state.discard[
-                    state.discard.length - 1
-                ];
-
-
-            state.currentColor =
-                color;
-
-
-            let skip = false;
-
-
-            if (
-                last.type === "draw4" ||
-                last.type === "draw10" ||
-                last.type === "draw20"
-            ) {
-
-                state.pendingDraw =
-                    last.type === "draw4"
-                        ? 4
-                        : last.type === "draw10"
-                            ? 10
-                            : 20;
-
-                skip = true;
-
-            }
-
-
-            advanceTurn(
-                state,
-                skip
-            );
-
-
-            document.getElementById("modal")
-                .classList.add("hidden");
-
-
-            await saveGame(
-                state
-            );
-
-        }
-    );
-
-});
-
-
-/* =========================================
-   BUTTONS
-========================================= */
-
-document.getElementById("create")
-    .addEventListener(
-        "click",
-        createRoom
-    );
-
-
-document.getElementById("join")
-    .addEventListener(
-        "click",
-        joinRoom
-    );
-
-
-document.getElementById("copy")
-    .addEventListener(
-        "click",
-        copyRoom
-    );
-
-
-document.getElementById("start")
-    .addEventListener(
-        "click",
-        startGame
-    );
-
-
-document.getElementById("leave")
-    .addEventListener(
-        "click",
-        leaveRoom
-    );
-
-
-document.getElementById("draw")
-    .addEventListener(
-        "click",
-        drawCard
-    );
-
-
-document.getElementById("uno")
-    .addEventListener(
-        "click",
-        callUNO
-    );
-
-
-/* =========================================
-   COPY
-========================================= */
-
-async function copyRoom() {
-
-    if (!roomCode) return;
-
-
-    try {
-
-        await navigator.clipboard
-            .writeText(roomCode);
-
-        toast(
-            "Room code copied!"
-        );
-
-    } catch {
-
-        toast(
-            roomCode
-        );
-
-    }
-
-}
-
-
-/* =========================================
-   LEAVE
-========================================= */
-
-async function leaveRoom() {
-
-    stopLobby();
-
-    stopGameWatcher();
-
-
-    if (roomCode) {
-
-        await supabaseClient
-            .from("players")
-            .delete()
-            .eq(
-                "id",
-                playerId
-            );
-
-    }
-
-
-    roomCode = "";
-
-    isHost = false;
-
-
-    showScreen("home");
-
-}
-
-
-/* =========================================
-   STARTUP
-========================================= */
-
-console.log(
-    "UNO Friends - Full Game Loaded"
-);
+            for (
+                let i = 0;
+                i < visibleCards;
+      

@@ -1,548 +1,163 @@
-/* =========================================
+/* =========================================================
+   UNO FRIENDS - COMPLETE GAME.JS
+   Supabase multiplayer version
+   ========================================================= */
+
+/* =========================
    SUPABASE
-========================================= */
+   ========================= */
 
-const SUPABASE_URL =
-    "https://cumwoqdzpsidocqvulxd.supabase.co";
+const SUPABASE_URL = "https://cumwoqdzpsidocqvulxd.supabase.co";
 
-const SUPABASE_KEY =
-    "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
+/*
+   IMPORTANT:
+   Keep your existing Supabase publishable/anon key here.
+*/
+const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
 
-const supabaseClient =
-    window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_KEY
-    );
+const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+);
 
 
-/* =========================================
-   PLAYER / ROOM
-========================================= */
+/* =========================
+   GLOBAL GAME VARIABLES
+   ========================= */
 
 let playerId = crypto.randomUUID();
+
 let playerName = "";
 let roomCode = "";
+
 let isHost = false;
 
-let lobbyTimer = null;
-let gameTimer = null;
+let players = [];
+
+let gameState = null;
+
+let polling = null;
 
 let waitingForColor = false;
+let pendingColorCard = null;
 
 
-/* =========================================
-   BASIC UI
-========================================= */
+/* =========================
+   DOM
+   ========================= */
 
-function showScreen(id) {
+const homeScreen = document.getElementById("home");
+const lobbyScreen = document.getElementById("lobby");
+const gameScreen = document.getElementById("game");
 
-    document.querySelectorAll(".screen")
-        .forEach(screen => {
-            screen.classList.remove("active");
-        });
+const nameInput = document.getElementById("name");
+const codeInput = document.getElementById("code");
 
-    const screen =
-        document.getElementById(id);
+const createBtn = document.getElementById("create");
+const joinBtn = document.getElementById("join");
 
-    if (screen) {
-        screen.classList.add("active");
-    }
+const roomCodeElement = document.getElementById("roomCode");
+const copyBtn = document.getElementById("copy");
+
+const playersElement = document.getElementById("players");
+const countElement = document.getElementById("count");
+
+const startBtn = document.getElementById("start");
+const leaveBtn = document.getElementById("leave");
+
+const opponentsElement = document.getElementById("opponents");
+
+const drawPileElement = document.getElementById("drawPile");
+const topCardElement = document.getElementById("topCard");
+
+const handElement = document.getElementById("hand");
+
+const drawBtn = document.getElementById("draw");
+const unoBtn = document.getElementById("uno");
+
+const turnElement = document.getElementById("turn");
+const colorElement = document.getElementById("color");
+
+const modal = document.getElementById("modal");
+const toast = document.getElementById("toast");
+
+
+/* =========================
+   UTILITIES
+   ========================= */
+
+function showScreen(screen) {
+
+    document.querySelectorAll(".screen").forEach(s => {
+        s.classList.remove("active");
+    });
+
+    screen.classList.add("active");
 }
 
 
-function toast(message) {
+function showToast(message) {
 
-    const box =
-        document.getElementById("toast");
+    if (!toast) return;
 
-    if (!box) return;
+    toast.textContent = message;
+    toast.classList.add("show");
 
-    box.textContent = message;
+    clearTimeout(showToast.timer);
 
-    box.classList.add("show");
-
-    setTimeout(() => {
-        box.classList.remove("show");
-    }, 2200);
+    showToast.timer = setTimeout(() => {
+        toast.classList.remove("show");
+    }, 2500);
 }
 
 
 function generateRoomCode() {
 
-    const chars =
-        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     let code = "";
 
     for (let i = 0; i < 6; i++) {
-
-        code += chars[
-            Math.floor(
-                Math.random() * chars.length
-            )
-        ];
-
+        code += chars[Math.floor(Math.random() * chars.length)];
     }
 
     return code;
 }
 
 
-/* =========================================
-   ROOM
-========================================= */
+function shuffle(array) {
 
-async function getRoom() {
+    const arr = [...array];
 
-    if (!roomCode) return null;
+    for (let i = arr.length - 1; i > 0; i--) {
 
-    const { data, error } =
-        await supabaseClient
-            .from("rooms")
-            .select("*")
-            .eq("code", roomCode)
-            .maybeSingle();
+        const j = Math.floor(Math.random() * (i + 1));
 
-    if (error) {
-
-        console.error(
-            "ROOM ERROR:",
-            error
-        );
-
-        return null;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
     }
 
-    return data;
+    return arr;
 }
 
 
-async function getPlayers() {
-
-    if (!roomCode) return [];
-
-    const { data, error } =
-        await supabaseClient
-            .from("players")
-            .select("*")
-            .eq("room_code", roomCode)
-            .order("joined_at", {
-                ascending: true
-            });
-
-    if (error) {
-
-        console.error(
-            "PLAYERS ERROR:",
-            error
-        );
-
-        return [];
-    }
-
-    return data || [];
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 
-/* =========================================
-   LOBBY
-========================================= */
+/* =========================
+   CARD CREATION
+   ========================= */
 
-async function refreshLobby() {
+function createCard(color, value) {
 
-    if (!roomCode) return;
-
-    const players =
-        await getPlayers();
-
-    renderPlayers(players);
-
-
-    const room =
-        await getRoom();
-
-    if (
-        room &&
-        room.game_started === true
-    ) {
-
-        stopLobby();
-
-        await loadGame();
-
-    }
-
+    return {
+        id: crypto.randomUUID(),
+        color,
+        value
+    };
 }
 
-
-function renderPlayers(players) {
-
-    const container =
-        document.getElementById("players");
-
-    const count =
-        document.getElementById("count");
-
-    const start =
-        document.getElementById("start");
-
-
-    if (!container) return;
-
-
-    container.innerHTML = "";
-
-
-    if (count) {
-
-        count.textContent =
-            ` (${players.length}/6)`;
-
-    }
-
-
-    players.forEach(player => {
-
-        const row =
-            document.createElement("div");
-
-        row.className =
-            "player";
-
-
-        const name =
-            document.createElement("span");
-
-        name.textContent =
-            player.name;
-
-
-        const crown =
-            document.createElement("span");
-
-        crown.textContent =
-            player.is_host
-                ? " 👑"
-                : "";
-
-
-        row.appendChild(name);
-
-        row.appendChild(crown);
-
-        container.appendChild(row);
-
-    });
-
-
-    if (!start) return;
-
-
-    if (isHost) {
-
-        start.disabled =
-            players.length < 2;
-
-    } else {
-
-        start.disabled = true;
-
-    }
-
-}
-
-
-function startLobby() {
-
-    stopLobby();
-
-    refreshLobby();
-
-    lobbyTimer =
-        setInterval(
-            refreshLobby,
-            1000
-        );
-
-}
-
-
-function stopLobby() {
-
-    if (lobbyTimer) {
-
-        clearInterval(lobbyTimer);
-
-        lobbyTimer = null;
-
-    }
-
-}
-
-
-/* =========================================
-   CREATE ROOM
-========================================= */
-
-async function createRoom() {
-
-    playerId =
-        crypto.randomUUID();
-
-
-    playerName =
-        document.getElementById("name")
-            .value
-            .trim();
-
-
-    if (!playerName) {
-
-        toast(
-            "Enter your name first!"
-        );
-
-        return;
-
-    }
-
-
-    let created = false;
-
-
-    for (let i = 0; i < 10; i++) {
-
-        roomCode =
-            generateRoomCode();
-
-
-        const { error } =
-            await supabaseClient
-                .from("rooms")
-                .insert({
-
-                    code: roomCode,
-
-                    game_started: false,
-
-                    game_state: null
-
-                });
-
-
-        if (!error) {
-
-            created = true;
-
-            break;
-
-        }
-
-    }
-
-
-    if (!created) {
-
-        toast(
-            "Could not create room."
-        );
-
-        return;
-
-    }
-
-
-    const { error } =
-        await supabaseClient
-            .from("players")
-            .insert({
-
-                id: playerId,
-
-                room_code: roomCode,
-
-                name: playerName,
-
-                is_host: true
-
-            });
-
-
-    if (error) {
-
-        console.error(
-            "CREATE PLAYER ERROR:",
-            error
-        );
-
-        toast(
-            "Could not create player."
-        );
-
-        return;
-
-    }
-
-
-    isHost = true;
-
-
-    document.getElementById("roomCode")
-        .textContent = roomCode;
-
-
-    showScreen("lobby");
-
-    startLobby();
-
-
-    toast(
-        "Room created!"
-    );
-
-}
-
-
-/* =========================================
-   JOIN ROOM
-========================================= */
-
-async function joinRoom() {
-
-    playerId =
-        crypto.randomUUID();
-
-
-    playerName =
-        document.getElementById("name")
-            .value
-            .trim();
-
-
-    roomCode =
-        document.getElementById("code")
-            .value
-            .trim()
-            .toUpperCase();
-
-
-    if (!playerName) {
-
-        toast(
-            "Enter your name first!"
-        );
-
-        return;
-
-    }
-
-
-    if (!roomCode) {
-
-        toast(
-            "Enter room code!"
-        );
-
-        return;
-
-    }
-
-
-    const room =
-        await getRoom();
-
-
-    if (!room) {
-
-        toast(
-            "Room does not exist!"
-        );
-
-        return;
-
-    }
-
-
-    if (room.game_started) {
-
-        toast(
-            "Game already started!"
-        );
-
-        return;
-
-    }
-
-
-    const players =
-        await getPlayers();
-
-
-    if (players.length >= 6) {
-
-        toast(
-            "Room is full!"
-        );
-
-        return;
-
-    }
-
-
-    const { error } =
-        await supabaseClient
-            .from("players")
-            .insert({
-
-                id: playerId,
-
-                room_code: roomCode,
-
-                name: playerName,
-
-                is_host: false
-
-            });
-
-
-    if (error) {
-
-        console.error(
-            "JOIN ERROR:",
-            error
-        );
-
-        toast(
-            "Could not join room."
-        );
-
-        return;
-
-    }
-
-
-    isHost = false;
-
-
-    document.getElementById("roomCode")
-        .textContent = roomCode;
-
-
-    showScreen("lobby");
-
-    startLobby();
-
-
-    toast(
-        "Joined room!"
-    );
-
-}
-
-
-/* =========================================
-   UNO DECK
-========================================= */
 
 function createDeck() {
 
@@ -555,917 +170,1018 @@ function createDeck() {
         "blue"
     ];
 
-
-    /* NUMBER CARDS */
-
     colors.forEach(color => {
 
-        deck.push({
+        /* One zero */
 
-            color,
+        deck.push(createCard(color, "0"));
 
-            type: "number",
-
-            value: 0
-
-        });
-
+        /* Two of each 1-9 */
 
         for (let n = 1; n <= 9; n++) {
 
-            deck.push({
-
-                color,
-
-                type: "number",
-
-                value: n
-
-            });
-
-            deck.push({
-
-                color,
-
-                type: "number",
-
-                value: n
-
-            });
-
+            deck.push(createCard(color, String(n)));
+            deck.push(createCard(color, String(n)));
         }
 
+        /* Action cards */
 
-        /* SKIP */
+        for (let i = 0; i < 2; i++) {
 
-        deck.push({
-
-            color,
-
-            type: "skip",
-
-            value: "SKIP"
-
-        });
-
-        deck.push({
-
-            color,
-
-            type: "skip",
-
-            value: "SKIP"
-
-        });
-
-
-        /* REVERSE */
-
-        deck.push({
-
-            color,
-
-            type: "reverse",
-
-            value: "REV"
-
-        });
-
-        deck.push({
-
-            color,
-
-            type: "reverse",
-
-            value: "REV"
-
-        });
-
-
-        /* +2 */
-
-        deck.push({
-
-            color,
-
-            type: "draw2",
-
-            value: "+2"
-
-        });
-
-        deck.push({
-
-            color,
-
-            type: "draw2",
-
-            value: "+2"
-
-        });
-
+            deck.push(createCard(color, "skip"));
+            deck.push(createCard(color, "reverse"));
+            deck.push(createCard(color, "+2"));
+        }
     });
 
 
-    /* WILD */
+    /* Wild */
 
     for (let i = 0; i < 4; i++) {
-
-        deck.push({
-
-            color: "wild",
-
-            type: "wild",
-
-            value: "WILD"
-
-        });
-
+        deck.push(createCard("wild", "wild"));
     }
 
 
-    /* +4 */
+    /* Wild +4 */
 
     for (let i = 0; i < 4; i++) {
-
-        deck.push({
-
-            color: "wild",
-
-            type: "draw4",
-
-            value: "+4"
-
-        });
-
+        deck.push(createCard("wild", "+4"));
     }
 
 
-    /* CUSTOM +10 */
+    /* Custom +10 */
 
     for (let i = 0; i < 4; i++) {
-
-        deck.push({
-
-            color: "wild",
-
-            type: "draw10",
-
-            value: "+10"
-
-        });
-
+        deck.push(createCard("wild", "+10"));
     }
 
 
-    /* CUSTOM +20 */
+    /* Custom +20 */
 
     for (let i = 0; i < 4; i++) {
-
-        deck.push({
-
-            color: "wild",
-
-            type: "draw20",
-
-            value: "+20"
-
-        });
-
+        deck.push(createCard("wild", "+20"));
     }
 
 
     return shuffle(deck);
-
 }
 
 
-function shuffle(array) {
+/* =========================
+   CARD HELPERS
+   ========================= */
 
-    const result =
-        [...array];
+function cardText(card) {
 
+    if (!card) return "?";
 
-    for (
-        let i = result.length - 1;
-        i > 0;
-        i--
-    ) {
+    switch (card.value) {
 
-        const j =
-            Math.floor(
-                Math.random() * (i + 1)
-            );
+        case "skip":
+            return "⊘";
 
+        case "reverse":
+            return "↻";
 
-        [
-            result[i],
-            result[j]
-        ] =
-        [
-            result[j],
-            result[i]
-        ];
+        case "+2":
+            return "+2";
 
+        case "+4":
+            return "+4";
+
+        case "+10":
+            return "+10";
+
+        case "+20":
+            return "+20";
+
+        case "wild":
+            return "WILD";
+
+        default:
+            return card.value;
     }
-
-
-    return result;
-
 }
 
 
-/* =========================================
-   GAME SETUP
-========================================= */
+function isWild(card) {
 
-async function initializeGame() {
-
-    const players =
-        await getPlayers();
-
-
-    if (players.length < 2) {
-
-        toast(
-            "Need at least 2 players!"
-        );
-
-        return false;
-
-    }
+    return (
+        card &&
+        (
+            card.value === "wild" ||
+            card.value === "+4" ||
+            card.value === "+10" ||
+            card.value === "+20"
+        )
+    );
+}
 
 
-    const deck =
-        createDeck();
+function drawAmount(card) {
 
+    if (!card) return 0;
+
+    if (card.value === "+2") return 2;
+    if (card.value === "+4") return 4;
+    if (card.value === "+10") return 10;
+    if (card.value === "+20") return 20;
+
+    return 0;
+}
+
+
+/* =========================
+   GAME STATE
+   ========================= */
+
+function createInitialGameState(roomPlayers) {
+
+    let deck = createDeck();
 
     const hands = {};
 
-
-    players.forEach(player => {
+    roomPlayers.forEach(player => {
 
         hands[player.id] = [];
 
+        for (let i = 0; i < 7; i++) {
+
+            hands[player.id].push(deck.pop());
+        }
     });
 
 
-    /* DEAL 7 CARDS */
+    /*
+       Find a normal starting card.
+    */
 
-    for (let i = 0; i < 7; i++) {
+    let firstCardIndex = deck.findIndex(card => !isWild(card));
 
-        players.forEach(player => {
-
-            hands[player.id].push(
-                deck.pop()
-            );
-
-        });
-
+    if (firstCardIndex === -1) {
+        firstCardIndex = 0;
     }
 
+    const firstCard = deck.splice(firstCardIndex, 1)[0];
 
-    /* FIRST DISCARD */
-
-    let firstCard =
-        deck.pop();
-
-
-    while (
-        firstCard.type === "wild" ||
-        firstCard.type === "draw4" ||
-        firstCard.type === "draw10" ||
-        firstCard.type === "draw20"
-    ) {
-
-        deck.unshift(
-            firstCard
-        );
-
-        firstCard =
-            deck.pop();
-
-    }
-
-
-    const gameState = {
-
-        players:
-            players.map(p => ({
-
-                id: p.id,
-
-                name: p.name
-
-            })),
-
+    return {
 
         deck,
 
+        discard: [firstCard],
 
         hands,
 
-
-        discard: [
-            firstCard
-        ],
-
-
-        currentPlayer: 0,
-
+        currentPlayerIndex: 0,
 
         direction: 1,
 
-
-        currentColor:
-            firstCard.color,
-
-
-        winner: null,
-
-
-        started: true,
-
-
-        unoCalled: {},
-
+        currentColor: firstCard.color,
 
         pendingDraw: 0,
 
+        winner: null,
 
-        pendingDrawType: null
+        started: true,
 
+        lastAction: "Game started",
+
+        unoCalls: {},
+
+        createdAt: Date.now()
     };
-
-
-    const { error } =
-        await supabaseClient
-            .from("rooms")
-            .update({
-
-                game_started: true,
-
-                game_state:
-                    gameState
-
-            })
-            .eq(
-                "code",
-                roomCode
-            );
-
-
-    if (error) {
-
-        console.error(
-            "GAME INIT ERROR:",
-            error
-        );
-
-        toast(
-            "Could not start game."
-        );
-
-        return false;
-
-    }
-
-
-    return true;
-
 }
 
 
-/* =========================================
-   START GAME
-========================================= */
+/* =========================
+   DATABASE
+   ========================= */
 
-async function startGame() {
+async function getRoom() {
 
-    if (!isHost) {
+    const { data, error } = await supabaseClient
+        .from("rooms")
+        .select("*")
+        .eq("code", roomCode)
+        .single();
 
-        toast(
-            "Only host can start."
-        );
+    if (error) {
+
+        console.error(error);
+
+        return null;
+    }
+
+    return data;
+}
+
+
+async function getPlayers() {
+
+    const { data, error } = await supabaseClient
+        .from("players")
+        .select("*")
+        .eq("room_code", roomCode)
+        .order("joined_at", {
+            ascending: true
+        });
+
+    if (error) {
+
+        console.error(error);
+
+        return [];
+    }
+
+    return data || [];
+}
+
+
+async function saveGameState(state) {
+
+    const { error } = await supabaseClient
+        .from("rooms")
+        .update({
+            game_state: state
+        })
+        .eq("code", roomCode);
+
+    if (error) {
+
+        console.error("Save game error:", error);
+
+        showToast("Could not save game");
+        return false;
+    }
+
+    return true;
+}
+
+
+async function loadGameState() {
+
+    const room = await getRoom();
+
+    if (!room) return null;
+
+    return room.game_state || null;
+}
+
+
+/* =========================
+   CREATE ROOM
+   ========================= */
+
+createBtn.addEventListener("click", async () => {
+
+    playerName = nameInput.value.trim();
+
+    if (!playerName) {
+
+        showToast("Enter your name first");
+        nameInput.focus();
 
         return;
-
     }
 
 
-    const players =
-        await getPlayers();
+    createBtn.disabled = true;
+
+    createBtn.textContent = "CREATING...";
+
+
+    try {
+
+        let newCode = generateRoomCode();
+
+        /*
+           Make sure code isn't already used.
+        */
+
+        let existing = await getRoomByCode(newCode);
+
+        while (existing) {
+
+            newCode = generateRoomCode();
+
+            existing = await getRoomByCode(newCode);
+        }
+
+
+        const { error: roomError } = await supabaseClient
+            .from("rooms")
+            .insert({
+                code: newCode,
+                game_started: false,
+                game_state: null
+            });
+
+
+        if (roomError) {
+
+            console.error(roomError);
+
+            showToast("Could not create room");
+
+            return;
+        }
+
+
+        const { error: playerError } = await supabaseClient
+            .from("players")
+            .insert({
+                id: playerId,
+                room_code: newCode,
+                name: playerName,
+                is_host: true
+            });
+
+
+        if (playerError) {
+
+            console.error(playerError);
+
+            await supabaseClient
+                .from("rooms")
+                .delete()
+                .eq("code", newCode);
+
+            showToast("Could not join room");
+
+            return;
+        }
+
+
+        roomCode = newCode;
+        isHost = true;
+
+        await enterLobby();
+
+    } finally {
+
+        createBtn.disabled = false;
+        createBtn.textContent = "CREATE ROOM";
+    }
+});
+
+
+async function getRoomByCode(code) {
+
+    const { data } = await supabaseClient
+        .from("rooms")
+        .select("code")
+        .eq("code", code)
+        .maybeSingle();
+
+    return data;
+}
+
+
+/* =========================
+   JOIN ROOM
+   ========================= */
+
+joinBtn.addEventListener("click", async () => {
+
+    playerName = nameInput.value.trim();
+
+    roomCode = codeInput.value.trim().toUpperCase();
+
+
+    if (!playerName) {
+
+        showToast("Enter your name first");
+        return;
+    }
+
+
+    if (!roomCode || roomCode.length !== 6) {
+
+        showToast("Enter a valid 6-character room code");
+        return;
+    }
+
+
+    joinBtn.disabled = true;
+    joinBtn.textContent = "JOINING...";
+
+
+    try {
+
+        const room = await getRoom();
+
+
+        if (!room) {
+
+            showToast("Room not found");
+            return;
+        }
+
+
+        if (room.game_started) {
+
+            showToast("Game already started");
+            return;
+        }
+
+
+        const currentPlayers = await getPlayers();
+
+
+        if (currentPlayers.length >= 6) {
+
+            showToast("Room is full");
+            return;
+        }
+
+
+        const duplicateName = currentPlayers.some(
+            p => p.name.toLowerCase() === playerName.toLowerCase()
+        );
+
+
+        if (duplicateName) {
+
+            showToast("That name is already taken");
+            return;
+        }
+
+
+        const { error } = await supabaseClient
+            .from("players")
+            .insert({
+                id: playerId,
+                room_code: roomCode,
+                name: playerName,
+                is_host: false
+            });
+
+
+        if (error) {
+
+            console.error(error);
+
+            showToast("Could not join room");
+            return;
+        }
+
+
+        isHost = false;
+
+        await enterLobby();
+
+    } finally {
+
+        joinBtn.disabled = false;
+        joinBtn.textContent = "JOIN ROOM";
+    }
+});
+
+
+/* =========================
+   ENTER LOBBY
+   ========================= */
+
+async function enterLobby() {
+
+    showScreen(lobbyScreen);
+
+    roomCodeElement.textContent = roomCode;
+
+    await refreshLobby();
+
+    startPolling();
+}
+
+
+/* =========================
+   LOBBY POLLING
+   ========================= */
+
+function startPolling() {
+
+    stopPolling();
+
+    polling = setInterval(async () => {
+
+        await syncRoom();
+
+    }, 900);
+}
+
+
+function stopPolling() {
+
+    if (polling) {
+
+        clearInterval(polling);
+        polling = null;
+    }
+}
+
+
+/* =========================
+   SYNC ROOM
+   ========================= */
+
+async function syncRoom() {
+
+    if (!roomCode) return;
+
+
+    const room = await getRoom();
+
+    if (!room) {
+
+        showToast("Room no longer exists");
+
+        leaveRoom(false);
+
+        return;
+    }
+
+
+    players = await getPlayers();
+
+
+    /*
+       Check if game started.
+    */
+
+    if (room.game_started) {
+
+        gameState = room.game_state;
+
+        if (gameState) {
+
+            stopPolling();
+
+            showScreen(gameScreen);
+
+            renderGame();
+        }
+
+        return;
+    }
+
+
+    /*
+       Still lobby.
+    */
+
+    if (
+        document
+            .getElementById("lobby")
+            .classList
+            .contains("active")
+    ) {
+
+        renderLobby();
+    }
+}
+
+
+/* =========================
+   LOBBY RENDER
+   ========================= */
+
+async function refreshLobby() {
+
+    players = await getPlayers();
+
+    renderLobby();
+}
+
+
+function renderLobby() {
+
+    countElement.textContent = `(${players.length}/6)`;
+
+    playersElement.innerHTML = "";
+
+
+    players.forEach((player, index) => {
+
+        const row = document.createElement("div");
+
+        row.className = "player-row";
+
+
+        const avatar = document.createElement("div");
+
+        avatar.className = "player-avatar";
+
+        avatar.textContent = getAvatar(player.name);
+
+
+        const info = document.createElement("div");
+
+        info.className = "player-info";
+
+
+        const name = document.createElement("div");
+
+        name.className = "player-name";
+
+        name.textContent = player.name;
+
+
+        const status = document.createElement("div");
+
+        status.className = "player-status";
+
+        status.textContent = player.is_host
+            ? "HOST"
+            : "PLAYER";
+
+
+        info.appendChild(name);
+        info.appendChild(status);
+
+
+        row.appendChild(avatar);
+        row.appendChild(info);
+
+
+        if (player.id === playerId) {
+
+            const you = document.createElement("span");
+
+            you.className = "you-tag";
+
+            you.textContent = "YOU";
+
+            row.appendChild(you);
+        }
+
+
+        playersElement.appendChild(row);
+    });
+
+
+    startBtn.style.display = isHost ? "block" : "none";
+
+
+    if (!isHost) {
+
+        startBtn.disabled = true;
+    }
+}
+
+
+/* =========================
+   AVATAR
+   ========================= */
+
+function getAvatar(name) {
+
+    const avatars = [
+        "😎",
+        "😈",
+        "🤠",
+        "🦊",
+        "🐼",
+        "🐸",
+        "🐯",
+        "🐨",
+        "🦁",
+        "🐵",
+        "👽",
+        "🤖"
+    ];
+
+
+    let total = 0;
+
+    for (let i = 0; i < name.length; i++) {
+
+        total += name.charCodeAt(i);
+    }
+
+
+    return avatars[total % avatars.length];
+}
+
+
+/* =========================
+   START GAME
+   ========================= */
+
+startBtn.addEventListener("click", async () => {
+
+    if (!isHost) return;
+
+
+    players = await getPlayers();
 
 
     if (players.length < 2) {
 
-        toast(
-            "Need at least 2 players!"
-        );
-
+        showToast("Need at least 2 players");
         return;
-
     }
 
 
     if (players.length > 6) {
 
-        toast(
-            "Maximum 6 players!"
-        );
-
+        showToast("Maximum 6 players");
         return;
-
     }
 
 
-    const room =
-        await getRoom();
+    startBtn.disabled = true;
+    startBtn.textContent = "STARTING...";
 
 
-    if (
-        room &&
-        room.game_state &&
-        room.game_started
-    ) {
+    try {
 
-        await loadGame();
+        const state = createInitialGameState(players);
 
-        return;
 
+        const { error } = await supabaseClient
+            .from("rooms")
+            .update({
+                game_started: true,
+                game_state: state
+            })
+            .eq("code", roomCode);
+
+
+        if (error) {
+
+            console.error(error);
+
+            showToast("Could not start game");
+
+            startBtn.disabled = false;
+            startBtn.textContent = "START GAME";
+
+            return;
+        }
+
+
+        gameState = state;
+
+        stopPolling();
+
+        showScreen(gameScreen);
+
+        renderGame();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        showToast("Game could not start");
+
+        startBtn.disabled = false;
+        startBtn.textContent = "START GAME";
+    }
+});
+
+
+/* =========================
+   COPY ROOM CODE
+   ========================= */
+
+copyBtn.addEventListener("click", async () => {
+
+    try {
+
+        await navigator.clipboard.writeText(roomCode);
+
+        copyBtn.textContent = "COPIED!";
+
+        showToast("Room code copied");
+
+        setTimeout(() => {
+
+            copyBtn.textContent = "COPY ROOM CODE";
+
+        }, 1500);
+
+    } catch {
+
+        showToast(`Room code: ${roomCode}`);
+    }
+});
+
+
+/* =========================
+   LEAVE ROOM
+   ========================= */
+
+leaveBtn.addEventListener("click", async () => {
+
+    await leaveRoom(true);
+});
+
+
+async function leaveRoom(showMessage = true) {
+
+    stopPolling();
+
+
+    if (roomCode) {
+
+        await supabaseClient
+            .from("players")
+            .delete()
+            .eq("id", playerId)
+            .eq("room_code", roomCode);
     }
 
 
-    const success =
-        await initializeGame();
+    roomCode = "";
+    playerName = "";
+    isHost = false;
+    players = [];
+    gameState = null;
 
 
-    if (!success) return;
+    showScreen(homeScreen);
 
 
-    stopLobby();
+    if (showMessage) {
 
-
-    await loadGame();
-
+        showToast("You left the room");
+    }
 }
 
 
-/* =========================================
-   LOAD GAME
-========================================= */
+/* =========================
+   GAME RENDER
+   ========================= */
 
-async function loadGame() {
+function renderGame() {
 
-    stopLobby();
-
-
-    showScreen("game");
+    if (!gameState) return;
 
 
-    await refreshGame();
+    renderTopCard();
 
+    renderTurn();
 
-    stopGameWatcher();
+    renderColor();
 
+    renderOpponents();
 
-    gameTimer =
-        setInterval(
-            refreshGame,
-            700
-        );
+    renderHand();
 
+    renderActions();
 }
 
 
-/* =========================================
-   STOP GAME WATCHER
-========================================= */
+/* =========================
+   TOP CARD
+   ========================= */
 
-function stopGameWatcher() {
+function renderTopCard() {
 
-    if (gameTimer) {
-
-        clearInterval(gameTimer);
-
-        gameTimer = null;
-
-    }
-
-}
+    const card = gameState.discard[
+        gameState.discard.length - 1
+    ];
 
 
-/* =========================================
-   REFRESH GAME
-========================================= */
+    topCardElement.innerHTML = "";
 
-async function refreshGame() {
-
-    const room =
-        await getRoom();
+    topCardElement.className = "card top-card";
 
 
-    if (
-        !room ||
-        !room.game_state
-    ) {
+    if (!card) {
 
+        topCardElement.textContent = "?";
         return;
-
     }
 
 
-    renderGame(
-        room.game_state
+    topCardElement.classList.add(
+        card.color === "wild"
+            ? "wild-card"
+            : `${card.color}-card`
     );
 
+
+    const oval = document.createElement("div");
+
+    oval.className = "card-oval";
+
+
+    const value = document.createElement("span");
+
+    value.className = "card-value";
+
+    value.textContent = cardText(card);
+
+
+    oval.appendChild(value);
+
+    topCardElement.appendChild(oval);
 }
 
 
-/* =========================================
-   RENDER GAME
-========================================= */
+/* =========================
+   TURN
+   ========================= */
 
-function renderGame(state) {
+function renderTurn() {
 
-    if (!state) return;
-
-
-    const myHand =
-        state.hands[playerId] || [];
+    if (!players.length) return;
 
 
     const currentPlayer =
-        state.players[
-            state.currentPlayer
-        ];
+        players[gameState.currentPlayerIndex];
 
 
     if (!currentPlayer) return;
-
-
-    const turn =
-        document.getElementById("turn");
-
-
-    if (state.winner) {
-
-        turn.textContent =
-            state.winner.name +
-            " WON! 🏆";
-
-    } else {
-
-        if (
-            currentPlayer.id === playerId
-        ) {
-
-            turn.textContent =
-                "YOUR TURN 🔥";
-
-        } else {
-
-            turn.textContent =
-                currentPlayer.name +
-                "'s turn";
-
-        }
-
-    }
-
-
-    const color =
-        document.getElementById("color");
-
-
-    if (color) {
-
-        color.textContent =
-            "Color: " +
-            state.currentColor;
-
-    }
-
-
-    const topCard =
-        state.discard[
-            state.discard.length - 1
-        ];
-
-
-    renderTopCard(
-        topCard
-    );
-
-
-    renderHand(
-        myHand,
-        state
-    );
-
-
-    renderOpponents(
-        state
-    );
-
-
-    const draw =
-        document.getElementById("draw");
-
-    const uno =
-        document.getElementById("uno");
 
 
     const myTurn =
         currentPlayer.id === playerId;
 
 
-    if (draw) {
+    if (myTurn) {
 
-        draw.disabled =
-            state.winner !== null ||
-            !myTurn ||
-            waitingForColor;
+        turnElement.textContent = "YOUR TURN";
 
+        turnElement.className = "your-turn";
+
+    } else {
+
+        turnElement.textContent =
+            `${currentPlayer.name}'S TURN`;
+
+        turnElement.className = "";
     }
-
-
-    if (uno) {
-
-        uno.disabled =
-            state.winner !== null ||
-            !myTurn ||
-            waitingForColor;
-
-    }
-
 }
 
 
-/* =========================================
-   TOP CARD
-========================================= */
+/* =========================
+   CURRENT COLOR
+   ========================= */
 
-function renderTopCard(card) {
+function renderColor() {
 
-    const top =
-        document.getElementById("topCard");
+    const color = gameState.currentColor || "-";
 
+    colorElement.textContent =
+        `Color: ${color.toUpperCase()}`;
 
-    if (!top || !card) return;
-
-
-    top.className =
-        "card " +
-        (
-            card.color === "wild"
-                ? "wild"
-                : card.color
-        );
-
-
-    top.textContent =
-        card.value;
-
+    colorElement.dataset.color = color;
 }
 
 
-/* =========================================
-   HAND
-========================================= */
+/* =========================
+   OPPONENTS
+   ========================= */
 
-function renderHand(
-    hand,
-    state
-) {
+function renderOpponents() {
 
-    const container =
-        document.getElementById("hand");
+    opponentsElement.innerHTML = "";
 
 
-    if (!container) return;
+    const opponents = players.filter(
+        player => player.id !== playerId
+    );
 
 
-    container.innerHTML = "";
+    opponents.forEach((player, index) => {
+
+        const wrapper = document.createElement("div");
+
+        wrapper.className = "opponent";
 
 
-    const top =
-        state.discard[
-            state.discard.length - 1
-        ];
+        if (
+            players[gameState.currentPlayerIndex] &&
+            players[gameState.currentPlayerIndex].id === player.id
+        ) {
 
-
-    const current =
-        state.players[
-            state.currentPlayer
-        ];
-
-
-    const myTurn =
-        current &&
-        current.id === playerId;
-
-
-    hand.forEach((card, index) => {
-
-        const button =
-            document.createElement("button");
-
-
-        button.className =
-            "card " +
-            (
-                card.color === "wild"
-                    ? "wild"
-                    : card.color
-            );
-
-
-        button.textContent =
-            card.value;
-
-
-        const playable =
-            myTurn &&
-            !waitingForColor &&
-            canPlay(
-                card,
-                top,
-                state.currentColor
-            );
-
-
-        if (playable) {
-
-            /* POP + GLOW */
-
-            button.classList.add(
-                "playable"
-            );
-
-        } else {
-
-            button.classList.add(
-                "disabled"
-            );
-
+            wrapper.classList.add("active-opponent");
         }
 
 
-        button.addEventListener(
-            "click",
-            () => {
+        const avatar = document.createElement("div");
 
-                if (!myTurn) {
+        avatar.className = "opponent-avatar";
 
-                    toast(
-                        "Wait for your turn!"
-                    );
-
-                    return;
-
-                }
+        avatar.textContent = getAvatar(player.name);
 
 
-                if (waitingForColor) {
+        const name = document.createElement("div");
 
-                    toast(
-                        "Choose a color first!"
-                    );
+        name.className = "opponent-name";
 
-                    return;
-
-                }
+        name.textContent = player.name;
 
 
-                if (!playable) {
-
-                    toast(
-                        "You can't play that card!"
-                    );
-
-                    return;
-
-                }
+        const hand =
+            gameState.hands[player.id] || [];
 
 
-                playCard(index);
+        const cardCount = document.createElement("div");
 
-            }
-        );
+        cardCount.className = "opponent-card-count";
 
-
-        container.appendChild(
-            button
-        );
-
-    });
-
-}
-
-
-/* =========================================
-   OPPONENTS
-========================================= */
-
-function renderOpponents(state) {
-
-    const container =
-        document.getElementById("opponents");
-
-
-    if (!container) return;
-
-
-    container.innerHTML = "";
-
-
-    state.players.forEach(
-        (player, index) => {
-
-            if (
-                player.id === playerId
-            ) return;
-
-
-            const div =
-                document.createElement("div");
-
-
-            div.className =
-                "opp";
-
-
-            if (
-                index ===
-                state.currentPlayer
-            ) {
-
-                div.classList.add(
-                    "active"
-                );
-
-            }
-
-
-            /* NAME */
-
-            const name =
-                document.createElement("div");
-
-            name.textContent =
-                player.name;
-
-            name.style.fontWeight =
-                "900";
-
-
-            /* CARD COUNT */
-
-            const count =
-                state.hands[player.id]
-                    ? state.hands[player.id].length
-                    : 0;
-
-
-            const cardCount =
-                document.createElement("div");
-
-            cardCount.textContent =
-                count + " cards";
-
-            cardCount.style.fontSize =
-                "11px";
-
-            cardCount.style.opacity =
-                "0.75";
-
-
-            /* HIDDEN CARDS */
-
-            const cards =
-                document.createElement("div");
-
-            cards.className =
-                "opponent-cards";
-
-
-            /*
-             * ONLY THE NUMBER OF CARDS
-             * IS USED HERE.
-             *
-             * ACTUAL CARD VALUES ARE
-             * NEVER RENDERED.
-             */
-
-            const visibleCards =
-                Math.min(
-                    count,
-                    10
-                );
-
-
-            for (
-                let i = 0;
-                i < visibleCards;
-      
+        cardCount.textContent = hand.length

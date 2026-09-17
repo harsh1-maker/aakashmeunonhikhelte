@@ -1,288 +1,96 @@
-/* =========================================================
-   UNO FRIENDS — 2 to 8 PLAYERS
-   Classic UNO + custom +10
-   +2 / +4 / +10 stacking
-   +4 playable at ANY time
-   Wrong UNO / missed UNO caught = draw 2
-   Continuous multiplayer sync + animations
-   ========================================================= */
+// ============================================================
+// UNO FRIENDS - MULTIPLAYER GAME
+// ============================================================
+
+// ---------------- SUPABASE ----------------
 
 const SUPABASE_URL = "https://cumwoqdzpsidocqvulxd.supabase.co";
-const SUPABASE_KEY = "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
 
-const supabaseClient = window.supabase.createClient(
+const SUPABASE_KEY =
+    "sb_publishable_1ibhlNKv4SuESO57U1FJGw_s208R7FI";
+
+const { createClient } = window.supabase;
+
+const db = createClient(
     SUPABASE_URL,
     SUPABASE_KEY
 );
 
-let playerId =
-    localStorage.getItem("uno_player_id") ||
-    crypto.randomUUID();
 
-localStorage.setItem(
-    "uno_player_id",
-    playerId
-);
+// ---------------- PLAYER ----------------
+
+// IMPORTANT:
+// Fresh ID every page session.
+// This prevents 409 duplicate-player errors.
+
+const playerId = crypto.randomUUID();
 
 let playerName = "";
 let roomCode = "";
 let isHost = false;
-let players = [];
+
 let state = null;
 let pollTimer = null;
-let interfaceBuilt = false;
-let lastRenderedState = "";
 
-const home =
-    document.getElementById("home");
-
-const lobby =
-    document.getElementById("lobby");
-
-const game =
-    document.getElementById("game");
-
-const nameInput =
-    document.getElementById("name");
-
-const codeInput =
-    document.getElementById("code");
-
-const createButton =
-    document.getElementById("create");
-
-const joinButton =
-    document.getElementById("join");
-
-const startButton =
-    document.getElementById("start");
-
-const leaveButton =
-    document.getElementById("leave");
-
-const copyButton =
-    document.getElementById("copy");
+let turnDrawn = false;
+let pendingWild = false;
 
 
-/* =========================================================
-   SCREEN
-   ========================================================= */
+// ============================================================
+// DOM HELPERS
+// ============================================================
 
-function showScreen(screen) {
-
-    document
-        .querySelectorAll(".screen")
-        .forEach(x =>
-            x.classList.remove("active")
-        );
-
-    screen.classList.add("active");
+function $(id) {
+    return document.getElementById(id);
 }
 
 
-/* =========================================================
-   ESCAPE HTML
-   ========================================================= */
+function showScreen(id) {
 
-function escapeHTML(text) {
+    document.querySelectorAll(".screen").forEach(screen => {
+        screen.classList.remove("active");
+    });
 
-    return String(text)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+    const target = $(id);
+
+    if (target) {
+        target.classList.add("active");
+    }
 }
 
-
-/* =========================================================
-   TOAST
-   ========================================================= */
 
 function toast(message) {
 
-    let el =
-        document.getElementById(
-            "unoToast"
-        );
+    const el = $("toast");
 
-    if (!el) {
+    if (!el) return;
 
-        el =
-            document.createElement(
-                "div"
-            );
-
-        el.id =
-            "unoToast";
-
-        document.body.appendChild(el);
-    }
-
-    el.textContent =
-        message;
-
+    el.textContent = message;
     el.classList.add("show");
 
-    clearTimeout(
-        el._timer
-    );
-
-    el._timer =
-        setTimeout(
-            () =>
-                el.classList.remove(
-                    "show"
-                ),
-            2200
-        );
+    setTimeout(() => {
+        el.classList.remove("show");
+    }, 2500);
 }
 
-
-/* =========================================================
-   ROOM CODE
-   ========================================================= */
 
 function generateRoomCode() {
 
-    const chars =
-        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-    return Array
-        .from(
-            { length: 6 },
-            () =>
-                chars[
-                    Math.floor(
-                        Math.random() *
-                        chars.length
-                    )
-                ]
-        )
-        .join("");
-}
+    let code = "";
 
-
-/* =========================================================
-   SHUFFLE
-   ========================================================= */
-
-function shuffle(array) {
-
-    const a =
-        [...array];
-
-    for (
-        let i = a.length - 1;
-        i > 0;
-        i--
-    ) {
-
-        const j =
-            Math.floor(
-                Math.random() *
-                (i + 1)
-            );
-
-        [
-            a[i],
-            a[j]
-        ] =
-        [
-            a[j],
-            a[i]
-        ];
+    for (let i = 0; i < 6; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
     }
 
-    return a;
+    return code;
 }
 
 
-/* =========================================================
-   AVATARS
-   ========================================================= */
-
-const avatars = [
-    "😎",
-    "😈",
-    "🤠",
-    "🦊",
-    "🐼",
-    "🐸",
-    "🐯",
-    "🐨",
-    "🦁",
-    "🐵",
-    "🤖",
-    "👽",
-    "🥷",
-    "👻"
-];
-
-
-function getAvatar(name) {
-
-    let number = 0;
-
-    for (
-        const character of name
-    ) {
-
-        number +=
-            character.charCodeAt(0);
-    }
-
-    return avatars[
-        number %
-        avatars.length
-    ];
-}
-
-
-/* =========================================================
-   CARDS
-   ========================================================= */
-
-function makeCard(
-    color,
-    value
-) {
-
-    return {
-
-        id:
-            crypto.randomUUID(),
-
-        color,
-
-        value
-    };
-}
-
-
-function cardText(value) {
-
-    return {
-
-        skip: "⊘",
-
-        reverse: "↻",
-
-        "+2": "+2",
-
-        "+4": "+4",
-
-        "+10": "+10",
-
-        wild: "★"
-
-    }[value] ?? value;
-}
-
-
-/* =========================================================
-   CREATE DECK
-   ========================================================= */
+// ============================================================
+// DECK
+// ============================================================
 
 function createDeck() {
 
@@ -295,104 +103,102 @@ function createDeck() {
         "blue"
     ];
 
+    for (const color of colors) {
 
-    for (
-        const color of colors
-    ) {
+        // 0
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "0"
+        });
 
-        deck.push(
-            makeCard(
+        // 1-9 twice
+        for (let n = 1; n <= 9; n++) {
+
+            deck.push({
+                id: crypto.randomUUID(),
                 color,
-                "0"
-            )
-        );
+                value: String(n)
+            });
 
-
-        for (
-            let n = 1;
-            n <= 9;
-            n++
-        ) {
-
-            deck.push(
-                makeCard(
-                    color,
-                    String(n)
-                )
-            );
-
-            deck.push(
-                makeCard(
-                    color,
-                    String(n)
-                )
-            );
+            deck.push({
+                id: crypto.randomUUID(),
+                color,
+                value: String(n)
+            });
         }
 
+        // Skip
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "skip"
+        });
 
-        for (
-            let i = 0;
-            i < 2;
-            i++
-        ) {
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "skip"
+        });
 
-            deck.push(
-                makeCard(
-                    color,
-                    "skip"
-                )
-            );
+        // Reverse
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "reverse"
+        });
 
-            deck.push(
-                makeCard(
-                    color,
-                    "reverse"
-                )
-            );
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "reverse"
+        });
 
-            deck.push(
-                makeCard(
-                    color,
-                    "+2"
-                )
-            );
-        }
+        // +2
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "+2"
+        });
+
+        deck.push({
+            id: crypto.randomUUID(),
+            color,
+            value: "+2"
+        });
     }
 
 
-    /*
-       Wild cards
-       4 Wild
-       4 +4
-       4 custom +10
-    */
+    // 4 Wild
+    for (let i = 0; i < 4; i++) {
 
-    for (
-        let i = 0;
-        i < 4;
-        i++
-    ) {
+        deck.push({
+            id: crypto.randomUUID(),
+            color: "wild",
+            value: "wild"
+        });
+    }
 
-        deck.push(
-            makeCard(
-                "wild",
-                "wild"
-            )
-        );
 
-        deck.push(
-            makeCard(
-                "wild",
-                "+4"
-            )
-        );
+    // 4 Wild +4
+    for (let i = 0; i < 4; i++) {
 
-        deck.push(
-            makeCard(
-                "wild",
-                "+10"
-            )
-        );
+        deck.push({
+            id: crypto.randomUUID(),
+            color: "wild",
+            value: "+4"
+        });
+    }
+
+
+    // 4 custom +10
+    for (let i = 0; i < 4; i++) {
+
+        deck.push({
+            id: crypto.randomUUID(),
+            color: "wild",
+            value: "+10"
+        });
     }
 
 
@@ -400,1132 +206,730 @@ function createDeck() {
 }
 
 
-/* =========================================================
-   SUPABASE
-   ========================================================= */
+function shuffle(array) {
 
-async function getRoom() {
+    const arr = [...array];
 
-    const {
-        data,
-        error
-    } =
-        await supabaseClient
-            .from("rooms")
-            .select("*")
-            .eq(
-                "code",
-                roomCode
-            )
-            .maybeSingle();
+    for (let i = arr.length - 1; i > 0; i--) {
 
+        const j = Math.floor(Math.random() * (i + 1));
 
-    if (error)
-        console.error(
-            "Room:",
-            error
-        );
-
-
-    return data;
-}
-
-
-async function getPlayers() {
-
-    const {
-        data,
-        error
-    } =
-        await supabaseClient
-            .from("players")
-            .select("*")
-            .eq(
-                "room_code",
-                roomCode
-            )
-            .order(
-                "joined_at",
-                {
-                    ascending:
-                        true
-                }
-            );
-
-
-    if (error)
-        console.error(
-            "Players:",
-            error
-        );
-
-
-    return data || [];
-}
-
-
-async function saveState() {
-
-    const {
-        error
-    } =
-        await supabaseClient
-            .from("rooms")
-            .update({
-
-                game_state:
-                    state
-
-            })
-            .eq(
-                "code",
-                roomCode
-            );
-
-
-    if (error) {
-
-        console.error(
-            "Save:",
-            error
-        );
-
-        toast(
-            "Connection problem"
-        );
-
-        return false;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
     }
 
-
-    return true;
+    return arr;
 }
 
 
-async function roomExists(code) {
-
-    const {
-        data
-    } =
-        await supabaseClient
-            .from("rooms")
-            .select("code")
-            .eq(
-                "code",
-                code
-            )
-            .maybeSingle();
-
-
-    return !!data;
-}
-
-
-/* =========================================================
-   CREATE ROOM
-   ========================================================= */
+// ============================================================
+// ROOM CREATION
+// ============================================================
 
 async function createRoom() {
 
-    playerName =
-        nameInput.value.trim();
+    playerName = $("name")?.value.trim();
+
+    if (!playerName) {
+        toast("Enter your name first");
+        return;
+    }
+
+    if (playerName.length > 15) {
+        toast("Name is too long");
+        return;
+    }
 
 
-    if (!playerName)
-        return toast(
-            "Enter your name"
-        );
+    roomCode = generateRoomCode();
 
 
-    createButton.disabled =
-        true;
+    // Make sure code doesn't already exist
+    let exists = true;
 
+    while (exists) {
 
-    try {
+        const { data } = await db
+            .from("rooms")
+            .select("code")
+            .eq("code", roomCode)
+            .maybeSingle();
 
-        let code =
-            generateRoomCode();
-
-
-        while (
-            await roomExists(code)
-        ) {
-
-            code =
-                generateRoomCode();
+        if (!data) {
+            exists = false;
+        } else {
+            roomCode = generateRoomCode();
         }
-
-
-        const {
-            error:
-                roomError
-        } =
-            await supabaseClient
-                .from("rooms")
-                .insert({
-
-                    code,
-
-                    game_started:
-                        false,
-
-                    game_state:
-                        null
-
-                });
-
-
-        if (roomError)
-            throw roomError;
-
-
-        const {
-            error:
-                playerError
-        } =
-            await supabaseClient
-                .from("players")
-                .insert({
-
-                    id:
-                        playerId,
-
-                    room_code:
-                        code,
-
-                    name:
-                        playerName,
-
-                    is_host:
-                        true
-
-                });
-
-
-        if (playerError)
-            throw playerError;
-
-
-        roomCode =
-            code;
-
-        isHost =
-            true;
-
-
-        await enterLobby();
-
-
-    } catch (error) {
-
-        console.error(error);
-
-        toast(
-            "Couldn't create room"
-        );
-
-
-    } finally {
-
-        createButton.disabled =
-            false;
     }
-}
 
 
-/* =========================================================
-   JOIN ROOM
-   ========================================================= */
-
-async function joinRoom() {
-
-    playerName =
-        nameInput.value.trim();
-
-
-    roomCode =
-        codeInput.value
-            .trim()
-            .toUpperCase();
+    const { error: roomError } = await db
+        .from("rooms")
+        .insert({
+            code: roomCode,
+            game_started: false,
+            game_state: null
+        });
 
 
-    if (!playerName)
-        return toast(
-            "Enter your name"
-        );
+    if (roomError) {
 
+        console.error("ROOM CREATE ERROR:", roomError);
 
-    if (
-        roomCode.length !== 6
-    )
-        return toast(
-            "Enter a valid room code"
-        );
+        toast("Could not create room");
 
-
-    joinButton.disabled =
-        true;
-
-
-    try {
-
-        const room =
-            await getRoom();
-
-
-        if (!room)
-            return toast(
-                "Room not found"
-            );
-
-
-        if (
-            room.game_started
-        )
-            return toast(
-                "Game already started"
-            );
-
-
-        const ps =
-            await getPlayers();
-
-
-        if (
-            ps.length >= 8
-        )
-            return toast(
-                "Room is full (8 players)"
-            );
-
-
-        if (
-            ps.some(
-                p =>
-                    p.name
-                        .toLowerCase() ===
-                    playerName
-                        .toLowerCase()
-            )
-        )
-            return toast(
-                "Name already taken"
-            );
-
-
-        const {
-            error
-        } =
-            await supabaseClient
-                .from("players")
-                .insert({
-
-                    id:
-                        playerId,
-
-                    room_code:
-                        roomCode,
-
-                    name:
-                        playerName,
-
-                    is_host:
-                        false
-
-                });
-
-
-        if (error)
-            throw error;
-
-
-        isHost =
-            false;
-
-
-        await enterLobby();
-
-
-    } catch (error) {
-
-        console.error(error);
-
-        toast(
-            "Couldn't join room"
-        );
-
-
-    } finally {
-
-        joinButton.disabled =
-            false;
+        return;
     }
-}
 
 
-/* =========================================================
-   LOBBY
-   ========================================================= */
+    isHost = true;
 
-async function enterLobby() {
 
-    showScreen(
-        lobby
-    );
+    const { error: playerError } = await db
+        .from("players")
+        .insert({
+            id: playerId,
+            room_code: roomCode,
+            name: playerName,
+            is_host: true
+        });
 
-    await refreshPlayers();
+
+    if (playerError) {
+
+        console.error("PLAYER CREATE ERROR:", playerError);
+
+        // Clean up room if player couldn't be added
+        await db
+            .from("rooms")
+            .delete()
+            .eq("code", roomCode);
+
+        toast("Could not enter room");
+
+        return;
+    }
+
+
+    await createPlayerHand();
+
+
+    openLobby();
 
     startPolling();
 }
 
 
-async function refreshPlayers() {
+// ============================================================
+// JOIN ROOM
+// ============================================================
 
-    players =
-        await getPlayers();
+async function joinRoom() {
 
-    renderLobby();
-}
+    playerName = $("name")?.value.trim();
 
-
-function renderLobby() {
-
-    const codeElement =
-        document.getElementById(
-            "roomCode"
-        );
-
-    const countElement =
-        document.getElementById(
-            "count"
-        );
-
-    const list =
-        document.getElementById(
-            "players"
-        );
+    const enteredCode =
+        $("code")?.value.trim().toUpperCase();
 
 
-    if (codeElement)
-        codeElement.textContent =
-            roomCode;
-
-
-    if (countElement)
-        countElement.textContent =
-            `(${players.length}/8)`;
-
-
-    if (!list)
+    if (!playerName) {
+        toast("Enter your name first");
         return;
+    }
 
 
-    list.innerHTML =
-        players
-            .map(
-                player => `
-
-                    <div class="lobby-player">
-
-                        <div class="lobby-avatar">
-                            ${getAvatar(player.name)}
-                        </div>
-
-                        <div class="lobby-player-info">
-
-                            <strong>
-                                ${escapeHTML(player.name)}
-                            </strong>
-
-                            <small>
-                                ${
-                                    player.is_host
-                                    ? "HOST"
-                                    : "PLAYER"
-                                }
-                            </small>
-
-                        </div>
-
-                        ${
-                            player.id === playerId
-                            ? `
-                                <span class="lobby-you">
-                                    YOU
-                                </span>
-                            `
-                            : ""
-                        }
-
-                    </div>
-
-                `
-            )
-            .join("");
+    if (!enteredCode) {
+        toast("Enter room code");
+        return;
+    }
 
 
-    if (startButton)
-        startButton.style.display =
-            isHost
-            ? "block"
-            : "none";
+    if (enteredCode.length !== 6) {
+        toast("Room code must be 6 characters");
+        return;
+    }
+
+
+    roomCode = enteredCode;
+
+
+    const {
+        data: room,
+        error: roomError
+    } = await db
+        .from("rooms")
+        .select("*")
+        .eq("code", roomCode)
+        .maybeSingle();
+
+
+    if (roomError) {
+
+        console.error(roomError);
+
+        toast("Could not find room");
+
+        return;
+    }
+
+
+    if (!room) {
+
+        toast("Room doesn't exist");
+
+        return;
+    }
+
+
+    if (room.game_started) {
+
+        toast("Game has already started");
+
+        return;
+    }
+
+
+    const {
+        data: existingPlayers,
+        error: countError
+    } = await db
+        .from("players")
+        .select("id")
+        .eq("room_code", roomCode);
+
+
+    if (countError) {
+
+        console.error(countError);
+
+        toast("Could not check room");
+
+        return;
+    }
+
+
+    if ((existingPlayers || []).length >= 8) {
+
+        toast("Room is full — maximum 8 players");
+
+        return;
+    }
+
+
+    const { error: playerError } = await db
+        .from("players")
+        .insert({
+            id: playerId,
+            room_code: roomCode,
+            name: playerName,
+            is_host: false
+        });
+
+
+    if (playerError) {
+
+        console.error("PLAYER JOIN ERROR:", playerError);
+
+        toast("Could not join room");
+
+        return;
+    }
+
+
+    isHost = false;
+
+
+    await createPlayerHand();
+
+
+    openLobby();
+
+    startPolling();
 }
 
 
-/* =========================================================
-   POLLING / SYNC
-   ========================================================= */
+// ============================================================
+// PLAYER HAND
+// ============================================================
+
+async function createPlayerHand() {
+
+    const { error } = await db
+        .from("player_hands")
+        .insert({
+            player_id: playerId,
+            room_code: roomCode,
+            hand: []
+        });
+
+
+    if (error && error.code !== "23505") {
+        console.error("HAND CREATE ERROR:", error);
+    }
+}
+
+
+// ============================================================
+// LOBBY
+// ============================================================
+
+function openLobby() {
+
+    showScreen("lobby");
+
+    const roomCodeEl = $("roomCode");
+
+    if (roomCodeEl) {
+        roomCodeEl.textContent = roomCode;
+    }
+
+    updateLobby();
+}
+
+
+async function updateLobby() {
+
+    if (!roomCode) return;
+
+
+    const {
+        data: players,
+        error
+    } = await db
+        .from("players")
+        .select("*")
+        .eq("room_code", roomCode)
+        .order("joined_at", {
+            ascending: true
+        });
+
+
+    if (error) {
+
+        console.error("LOBBY ERROR:", error);
+
+        return;
+    }
+
+
+    const container = $("players");
+
+    const count = $("count");
+
+    if (count) {
+        count.textContent = `(${players.length}/8)`;
+    }
+
+
+    if (!container) return;
+
+
+    container.innerHTML = "";
+
+
+    players.forEach((player, index) => {
+
+        const div = document.createElement("div");
+
+        div.className = "player";
+
+        div.innerHTML = `
+            <div class="player-avatar">
+                ${getAvatar(index)}
+            </div>
+
+            <span>
+                ${escapeHtml(player.name)}
+            </span>
+
+            ${player.is_host
+                ? `<small>HOST</small>`
+                : ""}
+        `;
+
+        container.appendChild(div);
+    });
+
+
+    const startButton = $("start");
+
+    if (startButton) {
+
+        startButton.style.display =
+            isHost ? "block" : "none";
+    }
+}
+
+
+function getAvatar(index) {
+
+    const avatars = [
+        "😎",
+        "🤠",
+        "😈",
+        "🤓",
+        "🥶",
+        "🤩",
+        "😏",
+        "👽"
+    ];
+
+    return avatars[index % avatars.length];
+}
+
+
+function escapeHtml(text) {
+
+    const div = document.createElement("div");
+
+    div.textContent = text;
+
+    return div.innerHTML;
+}
+
+
+// ============================================================
+// START GAME
+// ============================================================
+
+async function startGame() {
+
+    if (!isHost) return;
+
+
+    const {
+        data: players,
+        error
+    } = await db
+        .from("players")
+        .select("*")
+        .eq("room_code", roomCode)
+        .order("joined_at", {
+            ascending: true
+        });
+
+
+    if (error) {
+
+        console.error(error);
+
+        toast("Could not start game");
+
+        return;
+    }
+
+
+    if (players.length < 2) {
+
+        toast("Need at least 2 players");
+
+        return;
+    }
+
+
+    const deck = createDeck();
+
+
+    const hands = {};
+
+    const uno = {};
+
+
+    // Deal 7 cards each
+
+    players.forEach(player => {
+
+        hands[player.id] = deck.splice(0, 7);
+
+        uno[player.id] = false;
+    });
+
+
+    let discardCard = deck.pop();
+
+
+    // Don't start with action/wild
+    while (
+        discardCard.value === "wild" ||
+        discardCard.value === "+4" ||
+        discardCard.value === "+10" ||
+        discardCard.value === "+2" ||
+        discardCard.value === "skip" ||
+        discardCard.value === "reverse"
+    ) {
+
+        deck.unshift(discardCard);
+
+        discardCard = deck.pop();
+    }
+
+
+    const gameState = {
+
+        deck,
+
+        discard: [discardCard],
+
+        currentColor: discardCard.color,
+
+        currentPlayerIndex: 0,
+
+        direction: 1,
+
+        pendingDraw: 0,
+
+        pendingStackType: null,
+
+        uno,
+
+        hands,
+
+        winner: null,
+
+        started: true
+    };
+
+
+    const { error: stateError } = await db
+        .from("rooms")
+        .update({
+            game_started: true,
+            game_state: gameState
+        })
+        .eq("code", roomCode);
+
+
+    if (stateError) {
+
+        console.error("START ERROR:", stateError);
+
+        toast("Could not start game");
+
+        return;
+    }
+
+
+    // Also save individual hands
+    for (const player of players) {
+
+        await db
+            .from("player_hands")
+            .upsert({
+                player_id: player.id,
+                room_code: roomCode,
+                hand: hands[player.id]
+            }, {
+                onConflict: "player_id"
+            });
+    }
+
+
+    state = gameState;
+
+    buildGameInterface();
+
+    showScreen("game");
+
+    renderGame();
+
+    startPolling();
+}
+
+
+// ============================================================
+// POLLING / SYNC
+// ============================================================
 
 function startPolling() {
 
-    stopPolling();
+    if (pollTimer) {
+        clearInterval(pollTimer);
+    }
 
 
-    /*
-       IMPORTANT:
-       Never stop polling after
-       game starts.
-    */
+    // IMPORTANT:
+    // Keep polling even after game starts.
 
-    pollTimer =
-        setInterval(
-            syncEverything,
-            650
-        );
-}
+    syncEverything();
 
+    pollTimer = setInterval(() => {
 
-function stopPolling() {
+        syncEverything();
 
-    if (pollTimer)
-        clearInterval(
-            pollTimer
-        );
-
-    pollTimer =
-        null;
+    }, 650);
 }
 
 
 async function syncEverything() {
 
-    if (!roomCode)
-        return;
+    if (!roomCode) return;
 
 
     try {
 
-        const room =
-            await getRoom();
+        const {
+            data: room,
+            error: roomError
+        } = await db
+            .from("rooms")
+            .select("*")
+            .eq("code", roomCode)
+            .maybeSingle();
 
 
-        if (!room) {
+        if (roomError) {
+            console.error(roomError);
+            return;
+        }
 
-            stopPolling();
 
-            showScreen(
-                home
-            );
+        if (!room) return;
 
-            toast(
-                "Room no longer exists"
-            );
+
+        if (!room.game_started) {
+
+            if (
+                document.querySelector("#lobby.active")
+            ) {
+                await updateLobby();
+            }
 
             return;
         }
 
 
-        const latestPlayers =
-            await getPlayers();
+        // Game has started
 
+        if (room.game_state) {
 
-        const playersChanged =
-            JSON.stringify(
-                latestPlayers
-            ) !==
-            JSON.stringify(
-                players
-            );
+            const oldState = state;
 
-
-        players =
-            latestPlayers;
-
-
-        /*
-           GAME STATE SYNC
-        */
-
-        if (
-            room.game_started &&
-            room.game_state
-        ) {
-
-            const incoming =
-                room.game_state;
-
-
-            const incomingString =
-                JSON.stringify(
-                    incoming
-                );
+            state = room.game_state;
 
 
             if (
-                incomingString !==
-                lastRenderedState
+                !document.querySelector("#game.active")
             ) {
 
-                const oldState =
-                    state;
+                buildGameInterface();
 
-
-                state =
-                    incoming;
-
-
-                lastRenderedState =
-                    incomingString;
-
-
-                if (
-                    !game.classList.contains(
-                        "active"
-                    )
-                ) {
-
-                    showScreen(
-                        game
-                    );
-                }
-
-
-                if (
-                    !interfaceBuilt
-                ) {
-
-                    buildGameInterface();
-
-                    interfaceBuilt =
-                        true;
-                }
-
-
-                renderGame(
-                    oldState
-                );
+                showScreen("game");
             }
 
 
-            return;
-        }
+            renderGame();
 
 
-        if (
-            lobby.classList.contains(
-                "active"
-            ) &&
-            playersChanged
-        ) {
-
-            renderLobby();
-        }
-
-
-    } catch (error) {
-
-        console.error(
-            "Sync:",
-            error
-        );
-    }
-}
-
-
-/* =========================================================
-   CREATE GAME STATE
-   ========================================================= */
-
-function createGameState() {
-
-    let deck =
-        createDeck();
-
-
-    const hands = {};
-
-
-    players.forEach(
-        player => {
-
-            hands[
-                player.id
-            ] = [];
-
-
-            for (
-                let i = 0;
-                i < 7;
-                i++
+            // Winner
+            if (
+                state.winner &&
+                state.winner !== oldState?.winner
             ) {
 
-                hands[
-                    player.id
-                ].push(
-                    deck.pop()
-                );
+                showWinner();
             }
         }
-    );
 
+    } catch (err) {
 
-    /*
-       First card cannot be wild.
-    */
-
-    let first =
-        deck.pop();
-
-
-    while (
-        first.color ===
-        "wild"
-    ) {
-
-        deck.unshift(
-            first
-        );
-
-        deck =
-            shuffle(deck);
-
-        first =
-            deck.pop();
-    }
-
-
-    return {
-
-        deck,
-
-        discard: [
-            first
-        ],
-
-        hands,
-
-        currentPlayerIndex:
-            0,
-
-        direction:
-            1,
-
-        currentColor:
-            first.color,
-
-        pendingDraw:
-            0,
-
-        pendingStackType:
-            null,
-
-        pendingWild:
-            false,
-
-        winner:
-            null,
-
-        lastAction:
-            "Game started",
-
-        uno: {},
-
-        turnDrawn:
-            false,
-
-        started:
-            true
-    };
-}
-
-
-/* =========================================================
-   START GAME
-   ========================================================= */
-
-async function startGame() {
-
-    if (!isHost)
-        return;
-
-
-    players =
-        await getPlayers();
-
-
-    if (
-        players.length < 2
-    )
-        return toast(
-            "Need at least 2 players"
-        );
-
-
-    if (
-        players.length > 8
-    )
-        return toast(
-            "Maximum 8 players"
-        );
-
-
-    startButton.disabled =
-        true;
-
-
-    try {
-
-        const newState =
-            createGameState();
-
-
-        const {
-            error
-        } =
-            await supabaseClient
-                .from("rooms")
-                .update({
-
-                    game_started:
-                        true,
-
-                    game_state:
-                        newState
-
-                })
-                .eq(
-                    "code",
-                    roomCode
-                );
-
-
-        if (error)
-            throw error;
-
-
-        state =
-            newState;
-
-
-        lastRenderedState =
-            JSON.stringify(
-                newState
-            );
-
-
-        showScreen(
-            game
-        );
-
-
-        if (
-            !interfaceBuilt
-        ) {
-
-            buildGameInterface();
-
-            interfaceBuilt =
-                true;
-        }
-
-
-        renderGame();
-
-
-        /*
-           Keep syncing forever.
-        */
-
-        startPolling();
-
-
-    } catch (error) {
-
-        console.error(error);
-
-        toast(
-            "Couldn't start game"
-        );
-
-
-    } finally {
-
-        startButton.disabled =
-            false;
+        console.error("SYNC ERROR:", err);
     }
 }
 
 
-/* =========================================================
-   GAME UI
-   ========================================================= */
+// ============================================================
+// BUILD GAME UI
+// ============================================================
 
 function buildGameInterface() {
 
+    const game = $("game");
+
+    if (!game) return;
+
+
     game.innerHTML = `
 
-        <div
-            class="rotate-overlay"
-            id="rotateOverlay"
-        >
+        <header>
 
-            <div class="rotate-icon">
-                📱↻
+            <strong class="small-logo">
+                UNO
+            </strong>
+
+            <div id="turn">
+                Waiting...
             </div>
 
-            <h2>
-                Rotate Your Phone
-            </h2>
+            <div id="color">
+                Color: -
+            </div>
 
-            <p>
-                UNO is designed for landscape mode.
-            </p>
-
-        </div>
+        </header>
 
 
-        <div class="uno-app">
+        <div id="opponents"></div>
 
 
-            <div class="uno-topbar">
+        <main class="table">
 
-                <div class="uno-brand">
-                    UNO
-                </div>
+            <button
+                id="drawPile"
+                class="card back"
+            >
+                UNO
+            </button>
 
-                <div
-                    class="game-status"
-                    id="gameStatus"
-                >
-                    WAITING...
-                </div>
+            <div id="topCard" class="card">
+                ?
+            </div>
+
+        </main>
+
+
+        <div class="my-area">
+
+            <div id="hand" class="hand"></div>
+
+            <div class="actions">
+
+                <button id="draw">
+                    DRAW CARD
+                </button>
 
                 <button
-                    class="exit-game"
-                    id="exitGame"
+                    id="uno"
+                    class="uno-button"
                 >
-                    ✕
+                    UNO!
                 </button>
 
             </div>
 
+        </div>
 
-            <div
-                class="opponents-zone"
-                id="opponentsZone"
-            ></div>
+        <div
+            id="modal"
+            class="modal hidden"
+        >
 
+            <div class="modal-box">
 
-            <div class="uno-table">
+                <h2>Choose a color</h2>
 
-                <div class="table-highlight"></div>
-
-
-                <div
-                    class="center-message"
-                    id="centerMessage"
-                >
-                    YOUR TURN
-                </div>
-
-
-                <div class="center-piles">
-
-                    <button
-                        class="deck-pile"
-                        id="newDrawPile"
-                    >
-
-                        <div class="deck-back">
-
-                            <span>
-                                UNO
-                            </span>
-
-                        </div>
-
-                    </button>
-
-
-                    <div
-                        class="discard-pile"
-                        id="newDiscardPile"
-                    ></div>
-
-                </div>
-
-
-                <div
-                    class="direction-indicator"
-                    id="directionIndicator"
-                >
-                    ↻
-                </div>
-
-            </div>
-
-
-            <div
-                class="current-color"
-                id="currentColor"
-            >
-
-                <span></span>
-
-                <b>
+                <button data-color="red">
                     RED
-                </b>
+                </button>
 
-            </div>
+                <button data-color="yellow">
+                    YELLOW
+                </button>
 
+                <button data-color="green">
+                    GREEN
+                </button>
 
-            <div class="bottom-player">
-
-
-                <div
-                    class="my-player"
-                    id="myPlayer"
-                ></div>
-
-
-                <div
-                    class="my-hand"
-                    id="newHand"
-                ></div>
-
-
-                <div class="game-controls">
-
-
-                    <button
-                        class="draw-button"
-                        id="newDrawButton"
-                    >
-
-                        <span class="draw-icon">
-                            +
-                        </span>
-
-                        DRAW
-
-                    </button>
-
-
-                    <button
-                        class="uno-button"
-                        id="newUnoButton"
-                    >
-
-                        <span>
-                            UNO!
-                        </span>
-
-                    </button>
-
-
-                </div>
-
-            </div>
-
-
-            <div
-                class="last-action"
-                id="lastAction"
-            ></div>
-
-
-            <div
-                class="color-overlay"
-                id="colorOverlay"
-            >
-
-                <div class="color-box">
-
-                    <div class="color-title">
-                        CHOOSE COLOR
-                    </div>
-
-
-                    <div class="color-wheel">
-
-                        <button
-                            class="choose-red"
-                            data-color="red"
-                        >
-                            RED
-                        </button>
-
-
-                        <button
-                            class="choose-yellow"
-                            data-color="yellow"
-                        >
-                            YELLOW
-                        </button>
-
-
-                        <button
-                            class="choose-green"
-                            data-color="green"
-                        >
-                            GREEN
-                        </button>
-
-
-                        <button
-                            class="choose-blue"
-                            data-color="blue"
-                        >
-                            BLUE
-                        </button>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <div
-                class="winner-overlay"
-                id="winnerOverlay"
-            >
-
-                <div class="winner-box">
-
-                    <div class="winner-emoji">
-                        🏆
-                    </div>
-
-                    <div
-                        class="winner-title"
-                        id="winnerTitle"
-                    >
-                        YOU WIN!
-                    </div>
-
-                    <div
-                        class="winner-subtitle"
-                        id="winnerSubtitle"
-                    ></div>
-
-                    <button
-                        id="winnerLeave"
-                    >
-                        LEAVE GAME
-                    </button>
-
-                </div>
+                <button data-color="blue">
+                    BLUE
+                </button>
 
             </div>
 
@@ -1533,2004 +937,1260 @@ function buildGameInterface() {
     `;
 
 
-    document
-        .getElementById(
-            "newDrawButton"
-        )
-        .onclick =
-        drawCard;
+    $("draw")?.addEventListener(
+        "click",
+        drawCard
+    );
+
+
+    $("uno")?.addEventListener(
+        "click",
+        callUno
+    );
+
+
+    $("drawPile")?.addEventListener(
+        "click",
+        drawCard
+    );
 
 
     document
-        .getElementById(
-            "newDrawPile"
-        )
-        .onclick =
-        drawCard;
+        .querySelectorAll("[data-color]")
+        .forEach(button => {
 
+            button.addEventListener(
+                "click",
+                () => {
 
-    document
-        .getElementById(
-            "newUnoButton"
-        )
-        .onclick =
-        callUno;
-
-
-    document
-        .getElementById(
-            "exitGame"
-        )
-        .onclick =
-        leaveGame;
-
-
-    document
-        .getElementById(
-            "winnerLeave"
-        )
-        .onclick =
-        leaveGame;
-
-
-    document
-        .querySelectorAll(
-            ".color-wheel button"
-        )
-        .forEach(
-            button => {
-
-                button.onclick =
-                    () =>
-                        chooseColor(
-                            button.dataset.color
-                        );
-            }
-        );
+                    chooseColor(
+                        button.dataset.color
+                    );
+                }
+            );
+        });
 }
 
 
-/* =========================================================
-   RENDER GAME
-   ========================================================= */
+// ============================================================
+// RENDER GAME
+// ============================================================
 
-function renderGame(oldState = null) {
+async function renderGame() {
 
-    if (!state)
-        return;
+    if (!state) return;
 
 
-    renderOpponents();
-
-    renderMyPlayer();
-
-    renderHand();
-
-    renderDiscard();
+    renderTopCard();
 
     renderTurn();
 
+    renderOpponents();
+
+    renderHand();
+
     renderColor();
-
-    renderDirection();
-
-    renderLastAction();
-
-    renderControls();
-
-    renderWinner();
+}
 
 
-    /*
-       Draw animation when hand
-       gets bigger from remote sync.
-    */
+// ============================================================
+// TOP CARD
+// ============================================================
 
-    if (oldState) {
+function renderTopCard() {
 
-        const oldCount =
-            oldState.hands?.[
-                playerId
-            ]?.length ?? 0;
+    const el = $("topCard");
+
+    if (!el) return;
 
 
-        const newCount =
-            state.hands?.[
-                playerId
-            ]?.length ?? 0;
+    const card =
+        state.discard[state.discard.length - 1];
 
 
-        if (
-            newCount >
-            oldCount
-        ) {
+    if (!card) return;
 
-            animateDrawCards(
-                Math.min(
-                    newCount -
-                    oldCount,
-                    10
-                )
-            );
-        }
+
+    el.className =
+        `card ${card.color} ${card.value.replace("+", "plus")}`;
+
+
+    el.innerHTML =
+        cardDisplay(card);
+}
+
+
+// ============================================================
+// TURN
+// ============================================================
+
+function getCurrentPlayer() {
+
+    const players = getPlayersFromState();
+
+    if (!players.length) return null;
+
+    return players[state.currentPlayerIndex];
+}
+
+
+function getPlayersFromState() {
+
+    // Players are stored separately,
+    // so renderOpponents fetches them.
+    // This function uses the last known list.
+
+    return window.unoPlayers || [];
+}
+
+
+async function refreshPlayers() {
+
+    const {
+        data: players
+    } = await db
+        .from("players")
+        .select("*")
+        .eq("room_code", roomCode)
+        .order("joined_at", {
+            ascending: true
+        });
+
+
+    window.unoPlayers = players || [];
+
+    return window.unoPlayers;
+}
+
+
+async function renderTurn() {
+
+    const players =
+        await refreshPlayers();
+
+
+    const current =
+        players[state.currentPlayerIndex];
+
+
+    const turnEl = $("turn");
+
+    if (!turnEl || !current) return;
+
+
+    if (current.id === playerId) {
+
+        turnEl.textContent = "YOUR TURN";
+
+        turnEl.classList.add("my-turn");
+
+    } else {
+
+        turnEl.textContent =
+            `${current.name}'s turn`;
+
+        turnEl.classList.remove("my-turn");
     }
 }
 
 
-/* =========================================================
-   MY PLAYER
-   ========================================================= */
+// ============================================================
+// OPPONENTS
+// ============================================================
 
-function renderMyPlayer() {
+async function renderOpponents() {
 
-    const element =
-        document.getElementById(
-            "myPlayer"
-        );
+    const container = $("opponents");
 
-
-    if (!element)
-        return;
+    if (!container) return;
 
 
-    const hand =
-        state.hands[
-            playerId
-        ] || [];
+    const players =
+        await refreshPlayers();
 
 
-    element.innerHTML = `
+    container.innerHTML = "";
 
-        <div class="my-avatar">
-            ${getAvatar(playerName)}
-        </div>
 
-        <div class="my-name">
-            ${escapeHTML(playerName)}
-        </div>
+    players
+        .filter(player => player.id !== playerId)
+        .forEach((player, index) => {
 
-        <div class="my-card-count">
-            ${hand.length}
-        </div>
+            const hand =
+                state.hands[player.id] || [];
 
-    `;
+
+            const div =
+                document.createElement("div");
+
+
+            div.className = "opponent";
+
+
+            let cards = "";
+
+
+            for (
+                let i = 0;
+                i < Math.min(hand.length, 8);
+                i++
+            ) {
+
+                cards += `
+                    <div class="mini-card-back">
+                        UNO
+                    </div>
+                `;
+            }
+
+
+            div.innerHTML = `
+
+                <div class="opponent-name">
+
+                    <span class="avatar">
+                        ${getAvatar(index)}
+                    </span>
+
+                    ${escapeHtml(player.name)}
+
+                </div>
+
+                <div class="opponent-cards">
+                    ${cards}
+                </div>
+
+                <div class="card-count">
+                    ${hand.length} cards
+                </div>
+            `;
+
+
+            container.appendChild(div);
+        });
 }
 
 
-/* =========================================================
-   OPPONENTS
-   ========================================================= */
-
-function renderOpponents() {
-
-    const container =
-        document.getElementById(
-            "opponentsZone"
-        );
-
-
-    if (!container)
-        return;
-
-
-    const opponents =
-        players.filter(
-            player =>
-                player.id !==
-                playerId
-        );
-
-
-    container.innerHTML =
-        opponents
-            .map(
-                (
-                    player,
-                    index
-                ) => {
-
-                    const hand =
-                        state.hands[
-                            player.id
-                        ] || [];
-
-
-                    const isTurn =
-                        players[
-                            state.currentPlayerIndex
-                        ]?.id ===
-                        player.id;
-
-
-                    const visible =
-                        Math.min(
-                            hand.length,
-                            8
-                        );
-
-
-                    const backs =
-                        Array
-                            .from(
-                                {
-                                    length:
-                                        visible
-                                },
-                                (
-                                    _,
-                                    n
-                                ) => `
-
-                                    <div
-                                        class="mini-card-back"
-                                        style="--card-index:${n}"
-                                    >
-
-                                        <span>
-                                            UNO
-                                        </span>
-
-                                    </div>
-
-                                `
-                            )
-                            .join("");
-
-
-                    return `
-
-                        <div
-                            class="
-                                opponent-seat
-                                opponent-${index}
-                            "
-                        >
-
-                            <div
-                                class="
-                                    opponent-avatar
-                                    ${
-                                        isTurn
-                                        ? "active-turn"
-                                        : ""
-                                    }
-                                "
-                            >
-
-                                ${getAvatar(
-                                    player.name
-                                )}
-
-                                ${
-                                    isTurn
-                                    ? `
-                                        <div class="turn-ring"></div>
-                                      `
-                                    : ""
-                                }
-
-                            </div>
-
-
-                            <div class="opponent-name">
-
-                                ${escapeHTML(
-                                    player.name
-                                )}
-
-                            </div>
-
-
-                            <div class="opponent-hand">
-
-                                ${backs}
-
-                            </div>
-
-
-                            <div class="opponent-count">
-
-                                ${hand.length}
-
-                            </div>
-
-                        </div>
-
-                    `;
-                }
-            )
-            .join("");
-}
-
-
-/* =========================================================
-   HAND
-   ========================================================= */
+// ============================================================
+// MY HAND
+// ============================================================
 
 function renderHand() {
 
-    const container =
-        document.getElementById(
-            "newHand"
-        );
+    const container = $("hand");
 
-
-    if (!container)
-        return;
+    if (!container) return;
 
 
     const hand =
-        state.hands[
-            playerId
-        ] || [];
+        state.hands[playerId] || [];
 
 
-    const myTurn =
-        players[
-            state.currentPlayerIndex
-        ]?.id ===
-        playerId;
+    container.innerHTML = "";
 
 
-    container.innerHTML =
-        hand
-            .map(
-                (
-                    card,
-                    index
-                ) => {
+    hand.forEach((card, index) => {
 
-                    const playable =
-                        myTurn &&
-                        canPlay(card);
+        const button =
+            document.createElement("button");
 
 
-                    return `
-
-                        <button
-
-                            class="
-                                uno-card
-                                card-${card.color}
-                                ${
-                                    playable
-                                    ? "card-playable"
-                                    : "card-dim"
-                                }
-                            "
-
-                            style="
-                                --card-position:${index}
-                            "
-
-                            data-index="${index}"
-                        >
-
-                            <span
-                                class="
-                                    card-corner
-                                    top
-                                "
-                            >
-
-                                ${cardText(
-                                    card.value
-                                )}
-
-                            </span>
+        button.className =
+            `card hand-card ${card.color}`;
 
 
-                            <span class="card-oval">
+        if (canPlay(card)) {
 
-                                <span class="card-main">
-
-                                    ${cardText(
-                                        card.value
-                                    )}
-
-                                </span>
-
-                            </span>
+            button.classList.add("playable");
+        }
 
 
-                            <span
-                                class="
-                                    card-corner
-                                    bottom
-                                "
-                            >
-
-                                ${cardText(
-                                    card.value
-                                )}
-
-                            </span>
-
-                        </button>
-
-                    `;
-                }
-            )
-            .join("");
+        button.innerHTML =
+            cardDisplay(card);
 
 
-    container
-        .querySelectorAll(
-            ".uno-card"
-        )
-        .forEach(
-            button => {
-
-                button.onclick =
-                    () =>
-                        playCard(
-                            Number(
-                                button.dataset.index
-                            )
-                        );
-            }
+        button.addEventListener(
+            "click",
+            () => playCard(index)
         );
+
+
+        container.appendChild(button);
+    });
 }
 
 
-/* =========================================================
-   DISCARD
-   ========================================================= */
+// ============================================================
+// CARD DISPLAY
+// ============================================================
 
-function renderDiscard() {
+function cardDisplay(card) {
 
-    const container =
-        document.getElementById(
-            "newDiscardPile"
-        );
+    if (card.value === "skip") {
+        return "⊘";
+    }
 
+    if (card.value === "reverse") {
+        return "↻";
+    }
 
-    if (!container)
-        return;
+    if (card.value === "+2") {
+        return "+2";
+    }
 
+    if (card.value === "+4") {
+        return "+4";
+    }
 
-    const top =
-        state.discard[
-            state.discard.length -
-            1
-        ];
+    if (card.value === "+10") {
+        return "+10";
+    }
 
+    if (card.value === "wild") {
+        return "WILD";
+    }
 
-    if (!top)
-        return;
-
-
-    container.innerHTML = `
-
-        <div
-            class="
-                uno-card
-                center-card
-                card-${top.color}
-                card-drop-in
-            "
-        >
-
-            <span
-                class="
-                    card-corner
-                    top
-                "
-            >
-                ${cardText(
-                    top.value
-                )}
-            </span>
-
-
-            <span class="card-oval">
-
-                <span class="card-main">
-
-                    ${cardText(
-                        top.value
-                    )}
-
-                </span>
-
-            </span>
-
-
-            <span
-                class="
-                    card-corner
-                    bottom
-                "
-            >
-                ${cardText(
-                    top.value
-                )}
-            </span>
-
-        </div>
-    `;
+    return card.value;
 }
 
 
-/* =========================================================
-   TURN
-   ========================================================= */
-
-function renderTurn() {
-
-    const current =
-        players[
-            state.currentPlayerIndex
-        ];
-
-
-    if (!current)
-        return;
-
-
-    const mine =
-        current.id ===
-        playerId;
-
-
-    const status =
-        document.getElementById(
-            "gameStatus"
-        );
-
-
-    const center =
-        document.getElementById(
-            "centerMessage"
-        );
-
-
-    status.textContent =
-        mine
-        ? "YOUR TURN"
-        : `${current.name.toUpperCase()}'S TURN`;
-
-
-    status.className =
-        `game-status ${
-            mine
-            ? "my-turn"
-            : ""
-        }`;
-
-
-    center.textContent =
-        mine
-        ? "YOUR TURN"
-        : `${current.name.toUpperCase()}'S TURN`;
-
-
-    center.className =
-        `center-message ${
-            mine
-            ? "my-turn"
-            : ""
-        }`;
-}
-
-
-/* =========================================================
-   COLOR
-   ========================================================= */
+// ============================================================
+// COLOR
+// ============================================================
 
 function renderColor() {
 
-    const element =
-        document.getElementById(
-            "currentColor"
-        );
+    const el = $("color");
+
+    if (!el) return;
 
 
-    if (!element)
-        return;
-
-
-    const color =
-        state.currentColor ||
-        "red";
-
-
-    element.dataset.color =
-        color;
-
-
-    element.innerHTML = `
-
-        <span></span>
-
-        <b>
-            ${color.toUpperCase()}
-        </b>
-
-    `;
+    el.textContent =
+        `Color: ${state.currentColor.toUpperCase()}`;
 }
 
 
-/* =========================================================
-   DIRECTION
-   ========================================================= */
-
-function renderDirection() {
-
-    const element =
-        document.getElementById(
-            "directionIndicator"
-        );
-
-
-    if (element) {
-
-        element.textContent =
-            state.direction === 1
-            ? "↻"
-            : "↺";
-    }
-}
-
-
-/* =========================================================
-   LAST ACTION
-   ========================================================= */
-
-function renderLastAction() {
-
-    const element =
-        document.getElementById(
-            "lastAction"
-        );
-
-
-    if (element) {
-
-        element.textContent =
-            state.lastAction ||
-            "";
-    }
-}
-
-
-/* =========================================================
-   CONTROLS
-   ========================================================= */
-
-function renderControls() {
-
-    const draw =
-        document.getElementById(
-            "newDrawButton"
-        );
-
-
-    const uno =
-        document.getElementById(
-            "newUnoButton"
-        );
-
-
-    if (!draw || !uno)
-        return;
-
-
-    const myTurn =
-        players[
-            state.currentPlayerIndex
-        ]?.id ===
-        playerId;
-
-
-    draw.disabled =
-        !myTurn ||
-        !!state.winner ||
-        state.turnDrawn ||
-        state.pendingWild;
-
-
-    uno.disabled =
-        !myTurn ||
-        !!state.winner;
-}
-
-
-/* =========================================================
-   CAN PLAY
-   ========================================================= */
+// ============================================================
+// PLAYABILITY
+// ============================================================
 
 function canPlay(card) {
 
-    if (
-        !state ||
-        state.winner ||
-        state.pendingWild
-    )
+    if (!state) return false;
+
+
+    const players =
+        getPlayersFromState();
+
+
+    const current =
+        players[state.currentPlayerIndex];
+
+
+    if (!current) return false;
+
+
+    if (current.id !== playerId) {
         return false;
+    }
 
 
-    /*
-       USER RULE:
-       +4 can ALWAYS be played.
-    */
+    // If there is a stacking penalty
+    if (state.pendingStackType) {
 
-    if (
-        card.value ===
-        "+4"
-    )
+        return card.value ===
+            state.pendingStackType;
+    }
+
+
+    // +4 can ALWAYS be played
+    if (card.value === "+4") {
         return true;
+    }
 
 
-    /*
-       While stacking, only
-       same penalty type stacks.
-    */
+    // +10 is also wild
+    if (card.value === "+10") {
+        return true;
+    }
 
-    if (
-        state.pendingDraw >
-        0
-    ) {
 
-        return (
-            card.value ===
-            state.pendingStackType
-        );
+    // Wild
+    if (card.value === "wild") {
+        return true;
     }
 
 
     const top =
-        state.discard[
-            state.discard.length -
-            1
-        ];
+        state.discard[state.discard.length - 1];
 
 
-    if (!top)
+    if (!top) return true;
+
+
+    // Color match
+    if (card.color === state.currentColor) {
         return true;
+    }
 
 
-    if (
-        card.color ===
-        "wild"
-    )
+    // Value match
+    if (card.value === top.value) {
         return true;
-
-
-    if (
-        card.color ===
-        state.currentColor
-    )
-        return true;
-
-
-    if (
-        card.value ===
-        top.value
-    )
-        return true;
+    }
 
 
     return false;
 }
 
 
-/* =========================================================
-   DRAW CARD EFFECT
-   ========================================================= */
-
-function applyDrawCard(card) {
-
-    if (
-        card.value ===
-        "+2"
-    ) {
-
-        state.pendingDraw +=
-            2;
-
-        state.pendingStackType =
-            "+2";
-    }
-
-
-    if (
-        card.value ===
-        "+4"
-    ) {
-
-        state.pendingDraw +=
-            4;
-
-        state.pendingStackType =
-            "+4";
-    }
-
-
-    if (
-        card.value ===
-        "+10"
-    ) {
-
-        state.pendingDraw +=
-            10;
-
-        state.pendingStackType =
-            "+10";
-    }
-}
-
-
-/* =========================================================
-   NEXT TURN
-   ========================================================= */
-
-function advanceTurn(
-    skip = false
-) {
-
-    const total =
-        players.length;
-
-
-    const steps =
-        skip
-        ? 2
-        : 1;
-
-
-    state.currentPlayerIndex =
-        (
-            state.currentPlayerIndex +
-            state.direction *
-            steps +
-            total * 10
-        ) %
-        total;
-
-
-    state.turnDrawn =
-        false;
-}
-
-
-/* =========================================================
-   REFILL DECK
-   ========================================================= */
-
-function refillDeck() {
-
-    if (
-        state.discard.length <=
-        1
-    )
-        return;
-
-
-    const top =
-        state.discard[
-            state.discard.length -
-            1
-        ];
-
-
-    state.deck =
-        shuffle(
-            state.discard.slice(
-                0,
-                -1
-            )
-        );
-
-
-    state.discard =
-        [top];
-}
-
-
-/* =========================================================
-   PLAY CARD
-   ========================================================= */
+// ============================================================
+// PLAY CARD
+// ============================================================
 
 async function playCard(index) {
 
+    if (!state) return;
+
+
+    const players =
+        getPlayersFromState();
+
+
     const current =
-        players[
-            state.currentPlayerIndex
-        ];
+        players[state.currentPlayerIndex];
 
 
-    if (
-        current?.id !==
-        playerId
-    )
-        return toast(
-            "Wait for your turn"
-        );
+    if (!current || current.id !== playerId) {
 
+        toast("Not your turn");
 
-    if (
-        state.pendingWild
-    )
-        return toast(
-            "Choose a color first"
-        );
+        return;
+    }
 
 
     const hand =
-        state.hands[
-            playerId
-        ] || [];
+        state.hands[playerId] || [];
 
 
-    const card =
-        hand[index];
+    const card = hand[index];
 
 
-    if (
-        !card ||
-        !canPlay(card)
-    )
-        return toast(
-            "You can't play that"
-        );
+    if (!card) return;
 
 
-    const beforeCount =
-        hand.length;
+    if (!canPlay(card)) {
 
-
-    hand.splice(
-        index,
-        1
-    );
-
-
-    state.discard.push(
-        card
-    );
-
-
-    state.lastAction =
-        `${playerName} played ${cardText(card.value)}`;
-
-
-    animatePlayedCard(
-        card
-    );
-
-
-    /*
-       Player now has 1 card.
-       They need to call UNO.
-    */
-
-    if (
-        beforeCount === 2
-    ) {
-
-        state.uno[
-            playerId
-        ] = false;
-    }
-
-
-    /*
-       WIN
-    */
-
-    if (
-        hand.length ===
-        0
-    ) {
-
-        state.winner =
-            playerId;
-
-
-        state.lastAction =
-            `${playerName} won the game!`;
-
-
-        await saveState();
-
-
-        lastRenderedState =
-            JSON.stringify(
-                state
-            );
-
-
-        renderGame();
-
+        toast("You can't play that card");
 
         return;
     }
 
 
-    /*
-       Wild / +4 / +10
-       all choose a color.
-    */
-
-    if (
-        card.color ===
-        "wild"
-    ) {
-
-        state.pendingWild =
-            true;
+    // Remove card
+    hand.splice(index, 1);
 
 
-        /*
-           Apply stacking
-           immediately for
-           +4 / +10.
-        */
+    // UNO state
+    if (hand.length === 1) {
+
+        state.uno[playerId] = false;
+    }
+
+
+    state.discard.push(card);
+
+
+    // --------------------------------------------------------
+    // STACK +2
+    // --------------------------------------------------------
+
+    if (card.value === "+2") {
 
         if (
-            card.value ===
-            "+4" ||
-            card.value ===
-            "+10"
+            state.pendingStackType === "+2"
         ) {
 
-            applyDrawCard(
-                card
-            );
-        }
-
-
-        await saveState();
-
-
-        lastRenderedState =
-            JSON.stringify(
-                state
-            );
-
-
-        renderGame();
-
-
-        openColorPicker();
-
-
-        return;
-    }
-
-
-    let skip =
-        false;
-
-
-    if (
-        card.value ===
-        "+2"
-    ) {
-
-        applyDrawCard(
-            card
-        );
-    }
-
-
-    if (
-        card.value ===
-        "skip"
-    ) {
-
-        skip =
-            true;
-    }
-
-
-    if (
-        card.value ===
-        "reverse"
-    ) {
-
-        if (
-            players.length ===
-            2
-        ) {
-
-            skip =
-                true;
+            state.pendingDraw += 2;
 
         } else {
 
-            state.direction *=
-                -1;
+            state.pendingDraw = 2;
         }
+
+
+        state.pendingStackType = "+2";
+
+
+        advanceTurn();
+
+        await saveState();
+
+        return;
     }
 
 
-    advanceTurn(
-        skip
-    );
+    // --------------------------------------------------------
+    // STACK +4
+    // --------------------------------------------------------
+
+    if (card.value === "+4") {
+
+        if (
+            state.pendingStackType === "+4"
+        ) {
+
+            state.pendingDraw += 4;
+
+        } else {
+
+            state.pendingDraw = 4;
+        }
 
 
-    if (
-        beforeCount ===
-        2
-    ) {
+        state.pendingStackType = "+4";
 
-        state.lastAction +=
-            " — CALL UNO!";
+        pendingWild = true;
+
+
+        await saveState();
+
+        openColorPicker();
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // STACK +10
+    // --------------------------------------------------------
+
+    if (card.value === "+10") {
+
+        if (
+            state.pendingStackType === "+10"
+        ) {
+
+            state.pendingDraw += 10;
+
+        } else {
+
+            state.pendingDraw = 10;
+        }
+
+
+        state.pendingStackType = "+10";
+
+        pendingWild = true;
+
+
+        await saveState();
+
+        openColorPicker();
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // NORMAL WILD
+    // --------------------------------------------------------
+
+    if (card.value === "wild") {
+
+        pendingWild = true;
+
+        await saveState();
+
+        openColorPicker();
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // ACTION CARDS
+    // --------------------------------------------------------
+
+    if (card.value === "skip") {
+
+        advanceTurn();
+
+        advanceTurn();
+
+    }
+
+    else if (card.value === "reverse") {
+
+        state.direction *= -1;
+
+        advanceTurn();
+
+    }
+
+    else {
+
+        advanceTurn();
     }
 
 
     await saveState();
-
-
-    lastRenderedState =
-        JSON.stringify(
-            state
-        );
-
-
-    renderGame();
 }
 
 
-/* =========================================================
-   DRAW
-   ========================================================= */
+// ============================================================
+// COLOR PICKER
+// ============================================================
+
+function openColorPicker() {
+
+    const modal = $("modal");
+
+    if (!modal) return;
+
+
+    modal.classList.remove("hidden");
+}
+
+
+async function chooseColor(color) {
+
+    if (!pendingWild) return;
+
+
+    state.currentColor = color;
+
+    pendingWild = false;
+
+
+    const modal = $("modal");
+
+    if (modal) {
+        modal.classList.add("hidden");
+    }
+
+
+    advanceTurn();
+
+
+    await saveState();
+}
+
+
+// ============================================================
+// ADVANCE TURN
+// ============================================================
+
+function advanceTurn() {
+
+    const players =
+        getPlayersFromState();
+
+
+    if (!players.length) return;
+
+
+    state.currentPlayerIndex +=
+        state.direction;
+
+
+    if (
+        state.currentPlayerIndex >=
+        players.length
+    ) {
+
+        state.currentPlayerIndex = 0;
+    }
+
+
+    if (state.currentPlayerIndex < 0) {
+
+        state.currentPlayerIndex =
+            players.length - 1;
+    }
+
+
+    turnDrawn = false;
+}
+
+
+// ============================================================
+// DRAW CARD
+// ============================================================
 
 async function drawCard() {
 
+    if (!state) return;
+
+
+    const players =
+        getPlayersFromState();
+
+
     const current =
-        players[
-            state.currentPlayerIndex
-        ];
+        players[state.currentPlayerIndex];
 
 
-    if (
-        current?.id !==
-        playerId
-    )
-        return toast(
-            "Wait for your turn"
-        );
+    if (!current || current.id !== playerId) {
+
+        toast("Not your turn");
+
+        return;
+    }
 
 
-    if (
-        state.turnDrawn
-    )
-        return toast(
-            "You already drew this turn"
-        );
+    const hand =
+        state.hands[playerId] || [];
 
 
-    const amount =
-        state.pendingDraw >
-        0
-        ? state.pendingDraw
-        : 1;
+    let amount = 1;
 
 
-    const wasPenalty =
-        state.pendingDraw >
-        0;
+    // Penalty
+    if (state.pendingDraw > 0) {
+
+        amount = state.pendingDraw;
+
+        toast(`Drawing +${amount} cards`);
+
+        state.pendingDraw = 0;
+
+        state.pendingStackType = null;
+
+        turnDrawn = false;
+
+    } else {
+
+        // Only one normal draw per turn
+        if (turnDrawn) {
+
+            toast("You already drew");
+
+            return;
+        }
+
+        turnDrawn = true;
+    }
 
 
-    state.pendingDraw =
-        0;
+    const drawnCards = [];
 
 
-    state.pendingStackType =
-        null;
+    for (let i = 0; i < amount; i++) {
 
+        if (state.deck.length === 0) {
 
-    const drawn =
-        [];
-
-
-    for (
-        let i = 0;
-        i < amount;
-        i++
-    ) {
-
-        if (
-            !state.deck.length
-        ) {
-
-            refillDeck();
+            reshuffleDeck();
         }
 
 
-        if (
-            !state.deck.length
-        )
-            break;
+        if (state.deck.length === 0) break;
 
 
         const card =
             state.deck.pop();
 
 
-        state.hands[
-            playerId
-        ].push(
-            card
-        );
+        hand.push(card);
 
-
-        drawn.push(
-            card
-        );
+        drawnCards.push(card);
     }
 
 
-    state.lastAction =
-        `${playerName} drew ${drawn.length} card${
-            drawn.length === 1
-            ? ""
-            : "s"
-        }`;
+    renderHand();
 
 
     animateDrawCards(
-        drawn.length
+        drawnCards.length
     );
 
 
-    /*
-       Penalty draw ends turn.
-       Normal draw keeps turn.
-    */
+    // Penalty immediately ends turn
+    if (amount > 1) {
 
-    if (
-        wasPenalty
-    ) {
-
-        advanceTurn(
-            false
-        );
-
-    } else {
-
-        state.turnDrawn =
-            true;
+        advanceTurn();
     }
 
 
     await saveState();
-
-
-    lastRenderedState =
-        JSON.stringify(
-            state
-        );
-
-
-    renderGame();
-
-
-    /*
-       Normal single draw:
-       playable drawn card may
-       be played.
-    */
-
-    if (
-        !wasPenalty &&
-        drawn.length === 1 &&
-        canPlay(
-            drawn[0]
-        )
-    ) {
-
-        toast(
-            "You drew a playable card"
-        );
-    }
 }
 
 
-/* =========================================================
-   UNO
-   ========================================================= */
+// ============================================================
+// RESHUFFLE
+// ============================================================
+
+function reshuffleDeck() {
+
+    if (state.discard.length <= 1) {
+        return;
+    }
+
+
+    const top =
+        state.discard.pop();
+
+
+    state.deck =
+        shuffle(state.discard);
+
+
+    state.discard = [top];
+}
+
+
+// ============================================================
+// UNO
+// ============================================================
 
 async function callUno() {
 
-    const current =
-        players[
-            state.currentPlayerIndex
-        ];
+    if (!state) return;
 
 
     const hand =
-        state.hands[
-            playerId
-        ] || [];
+        state.hands[playerId] || [];
 
 
-    if (
-        current?.id !==
-        playerId
-    )
-        return toast(
-            "It's not your turn"
-        );
+    if (hand.length === 1) {
 
+        state.uno[playerId] = true;
 
-    /*
-       Correct UNO:
-       exactly 1 card.
-    */
-
-    if (
-        hand.length ===
-        1
-    ) {
-
-        state.uno[
-            playerId
-        ] = true;
-
-
-        state.lastAction =
-            `${playerName} shouted UNO!`;
-
+        toast("UNO! 🔥");
 
         await saveState();
 
-
-        lastRenderedState =
-            JSON.stringify(
-                state
-            );
-
-
-        const button =
-            document.getElementById(
-                "newUnoButton"
-            );
-
-
-        if (button) {
-
-            button.classList.add(
-                "uno-hit"
-            );
-
-
-            setTimeout(
-                () =>
-                    button.classList.remove(
-                        "uno-hit"
-                    ),
-                600
-            );
-        }
-
-
-        renderGame();
-
-
-        toast(
-            "🔥 UNO!"
-        );
-
-
         return;
     }
 
 
-    /*
-       Wrong UNO:
-       draw 2.
-    */
+    // Wrong UNO penalty +10
+    for (let i = 0; i < 10; i++) {
 
-    for (
-        let i = 0;
-        i < 2;
-        i++
-    ) {
-
-        if (
-            !state.deck.length
-        )
-            refillDeck();
-
-
-        if (
-            state.deck.length
-        ) {
-
-            hand.push(
-                state.deck.pop()
-            );
+        if (state.deck.length === 0) {
+            reshuffleDeck();
         }
+
+        if (state.deck.length === 0) break;
+
+        hand.push(state.deck.pop());
     }
 
 
-    state.lastAction =
-        `${playerName} called UNO incorrectly and drew 2!`;
+    toast("Wrong UNO! +10 cards 😭");
 
 
     await saveState();
-
-
-    lastRenderedState =
-        JSON.stringify(
-            state
-        );
-
-
-    renderGame();
-
-
-    toast(
-        "Wrong UNO! +2 cards"
-    );
 }
 
 
-/* =========================================================
-   COLOR PICKER
-   ========================================================= */
+// ============================================================
+// SAVE STATE
+// ============================================================
 
-function openColorPicker() {
+async function saveState() {
 
-    const overlay =
-        document.getElementById(
-            "colorOverlay"
+    if (!roomCode || !state) return;
+
+
+    const { error } = await db
+        .from("rooms")
+        .update({
+            game_state: state
+        })
+        .eq("code", roomCode);
+
+
+    if (error) {
+
+        console.error(
+            "SAVE STATE ERROR:",
+            error
         );
-
-
-    if (overlay)
-        overlay.classList.add(
-            "open"
-        );
-}
-
-
-async function chooseColor(color) {
-
-    if (
-        !state.pendingWild
-    )
-        return;
-
-
-    state.currentColor =
-        color;
-
-
-    state.pendingWild =
-        false;
-
-
-    state.lastAction =
-        `${playerName} chose ${color}`;
-
-
-    document
-        .getElementById(
-            "colorOverlay"
-        )
-        ?.classList.remove(
-            "open"
-        );
-
-
-    /*
-       Wild card effects have
-       already been applied.
-    */
-
-    advanceTurn(
-        false
-    );
-
-
-    await saveState();
-
-
-    lastRenderedState =
-        JSON.stringify(
-            state
-        );
-
-
-    renderGame();
-}
-
-
-/* =========================================================
-   WINNER
-   ========================================================= */
-
-function renderWinner() {
-
-    const overlay =
-        document.getElementById(
-            "winnerOverlay"
-        );
-
-
-    if (!overlay)
-        return;
-
-
-    if (
-        !state.winner
-    ) {
-
-        overlay.classList.remove(
-            "open"
-        );
-
-        return;
     }
+
+
+    // Save own hand separately too
+    await db
+        .from("player_hands")
+        .upsert({
+            player_id: playerId,
+            room_code: roomCode,
+            hand: state.hands[playerId] || []
+        }, {
+            onConflict: "player_id"
+        });
+}
+
+
+// ============================================================
+// WINNER
+// ============================================================
+
+function checkWinner() {
+
+    for (const id in state.hands) {
+
+        if (state.hands[id].length === 0) {
+
+            state.winner = id;
+
+            return true;
+        }
+    }
+
+
+    return false;
+}
+
+
+async function showWinner() {
+
+    const players =
+        await refreshPlayers();
 
 
     const winner =
         players.find(
-            p =>
-                p.id ===
-                state.winner
+            p => p.id === state.winner
         );
 
 
-    if (!winner)
-        return;
+    if (!winner) return;
 
 
-    document
-        .getElementById(
-            "winnerTitle"
-        )
-        .textContent =
-        winner.id === playerId
-        ? "YOU WIN!"
-        : `${winner.name.toUpperCase()} WINS!`;
+    const overlay =
+        document.createElement("div");
 
 
-    document
-        .getElementById(
-            "winnerSubtitle"
-        )
-        .textContent =
-        winner.id === playerId
-        ? "🏆 What a game!"
-        : "Better luck next round!";
+    overlay.className =
+        "winner-overlay";
 
 
-    overlay.classList.add(
-        "open"
-    );
+    overlay.innerHTML = `
+
+        <div class="winner-box">
+
+            <div class="winner-title">
+                🎉 UNO!
+            </div>
+
+            <h1>
+                ${escapeHtml(winner.name)}
+                WINS!
+            </h1>
+
+            <button onclick="location.reload()">
+                PLAY AGAIN
+            </button>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(overlay);
 }
 
 
-/* =========================================================
-   DRAW ANIMATION
-   ========================================================= */
+// ============================================================
+// DRAW ANIMATION
+// ============================================================
 
-function animateDrawCards(
-    count
-) {
+function animateDrawCards(count) {
 
-    if (!count)
-        return;
+    if (!count) return;
+
+
+    const drawPile =
+        $("drawPile");
+
+
+    const hand =
+        $("hand");
+
+
+    if (!drawPile || !hand) return;
 
 
     const source =
-        document.getElementById(
-            "newDrawPile"
-        );
+        drawPile.getBoundingClientRect();
 
 
-    const target =
-        document.getElementById(
-            "newHand"
-        );
+    for (let i = 0; i < Math.min(count, 5); i++) {
+
+        const flying =
+            document.createElement("div");
 
 
-    if (
-        !source ||
-        !target
-    )
-        return;
-
-
-    const s =
-        source.getBoundingClientRect();
-
-
-    const t =
-        target.getBoundingClientRect();
-
-
-    for (
-        let i = 0;
-        i < Math.min(
-            count,
-            10
-        );
-        i++
-    ) {
-
-        const flyer =
-            document.createElement(
-                "div"
-            );
-
-
-        flyer.className =
+        flying.className =
             "flying-card";
 
 
-        flyer.innerHTML =
-            "<span>UNO</span>";
+        flying.textContent =
+            "UNO";
 
 
-        flyer.style.left =
-            `${
-                s.left +
-                s.width / 2 -
-                27
-            }px`;
+        document.body.appendChild(flying);
 
 
-        flyer.style.top =
-            `${
-                s.top +
-                s.height / 2 -
-                38
-            }px`;
+        const target =
+            hand.getBoundingClientRect();
 
 
-        document.body.appendChild(
-            flyer
-        );
+        flying.style.left =
+            `${source.left}px`;
+
+        flying.style.top =
+            `${source.top}px`;
 
 
-        const dx =
-            t.left +
-            t.width / 2 -
-            (
-                s.left +
-                s.width / 2
-            );
+        requestAnimationFrame(() => {
+
+            flying.style.left =
+                `${target.left + target.width / 2}px`;
+
+            flying.style.top =
+                `${target.top}px`;
+
+            flying.style.transform =
+                "rotate(20deg) scale(.6)";
+
+            flying.style.opacity =
+                "0";
+        });
 
 
-        const dy =
-            t.top +
-            t.height / 2 -
-            (
-                s.top +
-                s.height / 2
-            );
+        setTimeout(() => {
 
+            flying.remove();
 
-        setTimeout(
-            () => {
-
-                flyer.style.transform =
-                    `
-                        translate(
-                            ${
-                                dx +
-                                i * 7
-                            }px,
-                            ${
-                                dy +
-                                i * 2
-                            }px
-                        )
-                        rotate(
-                            ${
-                                i % 2
-                                ? 12
-                                : -12
-                            }deg
-                        )
-                        scale(.72)
-                    `;
-
-
-                flyer.style.opacity =
-                    "0.05";
-
-            },
-            20 +
-            i * 55
-        );
-
-
-        setTimeout(
-            () =>
-                flyer.remove(),
-            850 +
-            i * 55
-        );
+        }, 650 + i * 80);
     }
 }
 
 
-/* =========================================================
-   PLAY ANIMATION
-   ========================================================= */
-
-function animatePlayedCard(
-    card
-) {
-
-    const hand =
-        document.getElementById(
-            "newHand"
-        );
-
-
-    const discard =
-        document.getElementById(
-            "newDiscardPile"
-        );
-
-
-    if (
-        !hand ||
-        !discard
-    )
-        return;
-
-
-    const source =
-        hand.getBoundingClientRect();
-
-
-    const target =
-        discard.getBoundingClientRect();
-
-
-    const flyer =
-        document.createElement(
-            "div"
-        );
-
-
-    flyer.className =
-        `
-            flying-card
-            played-flying
-            card-${card.color}
-        `;
-
-
-    flyer.innerHTML =
-        `
-            <span>
-                ${cardText(
-                    card.value
-                )}
-            </span>
-        `;
-
-
-    flyer.style.left =
-        `${
-            source.left +
-            source.width / 2 -
-            27
-        }px`;
-
-
-    flyer.style.top =
-        `${
-            source.top +
-            source.height / 2 -
-            38
-        }px`;
-
-
-    document.body.appendChild(
-        flyer
-    );
-
-
-    requestAnimationFrame(
-        () => {
-
-            flyer.style.transform =
-                `
-                    translate(
-                        ${
-                            target.left -
-                            source.left
-                        }px,
-                        ${
-                            target.top -
-                            source.top
-                        }px
-                    )
-                    rotate(360deg)
-                    scale(.85)
-                `;
-
-
-            flyer.style.opacity =
-                "0";
-        }
-    );
-
-
-    setTimeout(
-        () =>
-            flyer.remove(),
-        650
-    );
-}
-
-
-/* =========================================================
-   LEAVE
-   ========================================================= */
+// ============================================================
+// LEAVE ROOM
+// ============================================================
 
 async function leaveGame() {
 
-    stopPolling();
-
-
-    if (roomCode) {
-
-        await supabaseClient
-            .from("players")
-            .delete()
-            .eq(
-                "id",
-                playerId
-            )
-            .eq(
-                "room_code",
-                roomCode
-            );
+    if (!roomCode) {
+        location.reload();
+        return;
     }
 
 
-    roomCode = "";
+    if (pollTimer) {
 
-    playerName = "";
+        clearInterval(pollTimer);
 
-    isHost = false;
-
-    players = [];
-
-    state = null;
-
-    interfaceBuilt =
-        false;
-
-    lastRenderedState =
-        "";
+        pollTimer = null;
+    }
 
 
-    showScreen(
-        home
+    await db
+        .from("player_hands")
+        .delete()
+        .eq("player_id", playerId);
+
+
+    await db
+        .from("players")
+        .delete()
+        .eq("id", playerId);
+
+
+    location.reload();
+}
+
+
+// ============================================================
+// COPY ROOM CODE
+// ============================================================
+
+async function copyRoomCode() {
+
+    if (!roomCode) return;
+
+
+    try {
+
+        await navigator.clipboard.writeText(
+            roomCode
+        );
+
+        toast("Room code copied!");
+
+    } catch {
+
+        toast("Copy failed");
+    }
+}
+
+
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
+
+function setupHomeButtons() {
+
+    const create =
+        $("create");
+
+    const join =
+        $("join");
+
+    const copy =
+        $("copy");
+
+    const start =
+        $("start");
+
+    const leave =
+        $("leave");
+
+
+    if (create) {
+
+        create.addEventListener(
+            "click",
+            createRoom
+        );
+    }
+
+
+    if (join) {
+
+        join.addEventListener(
+            "click",
+            joinRoom
+        );
+    }
+
+
+    if (copy) {
+
+        copy.addEventListener(
+            "click",
+            copyRoomCode
+        );
+    }
+
+
+    if (start) {
+
+        start.addEventListener(
+            "click",
+            startGame
+        );
+    }
+
+
+    if (leave) {
+
+        leave.addEventListener(
+            "click",
+            leaveGame
+        );
+    }
+
+
+    // Enter key support
+    $("name")?.addEventListener(
+        "keydown",
+        e => {
+
+            if (e.key === "Enter") {
+                createRoom();
+            }
+        }
+    );
+
+
+    $("code")?.addEventListener(
+        "keydown",
+        e => {
+
+            if (e.key === "Enter") {
+                joinRoom();
+            }
+        }
     );
 }
 
 
-/* =========================================================
-   BUTTONS
-   ========================================================= */
+// ============================================================
+// MOBILE ROTATION
+// ============================================================
 
-createButton?.addEventListener(
-    "click",
-    createRoom
-);
+function setupRotationOverlay() {
 
+    if (!document.querySelector(".rotate-overlay")) {
 
-joinButton?.addEventListener(
-    "click",
-    joinRoom
-);
+        const overlay =
+            document.createElement("div");
 
 
-startButton?.addEventListener(
-    "click",
-    startGame
-);
+        overlay.className =
+            "rotate-overlay";
 
 
-leaveButton?.addEventListener(
-    "click",
-    leaveGame
-);
+        overlay.innerHTML = `
+
+            <div>
+
+                <div class="rotate-icon">
+                    📱
+                </div>
+
+                <h2>
+                    Rotate Your Phone
+                </h2>
+
+                <p>
+                    Please use landscape mode
+                    to play UNO.
+                </p>
+
+            </div>
+        `;
 
 
-copyButton?.addEventListener(
-    "click",
-    async () => {
-
-        try {
-
-            await navigator
-                .clipboard
-                .writeText(
-                    roomCode
-                );
-
-
-            toast(
-                "Room code copied!"
-            );
-
-        } catch {
-
-            toast(
-                roomCode
-            );
-        }
+        document.body.appendChild(overlay);
     }
-);
+}
 
 
-/* =========================================================
-   ENTER KEY
-   ========================================================= */
-
-nameInput?.addEventListener(
-    "keydown",
-    event => {
-
-        if (
-            event.key ===
-            "Enter"
-        ) {
-
-            codeInput.focus();
-        }
-    }
-);
-
-
-codeInput?.addEventListener(
-    "keydown",
-    event => {
-
-        if (
-            event.key ===
-            "Enter"
-        ) {
-
-            joinButton.click();
-        }
-    }
-);
-
-
-/* =========================================================
-   VISIBILITY
-   ========================================================= */
+// ============================================================
+// INITIALIZE
+// ============================================================
 
 document.addEventListener(
-    "visibilitychange",
+    "DOMContentLoaded",
     () => {
 
-        if (
-            !document.hidden &&
-            roomCode
-        ) {
+        console.log(
+            "UNO Friends — 8 player multiplayer loaded"
+        );
 
-            syncEverything();
-        }
+
+        setupHomeButtons();
+
+        setupRotationOverlay();
     }
 );
 
 
-/* =========================================================
-   START
-   ========================================================= */
+// ============================================================
+// MAKE FUNCTIONS AVAILABLE
+// ============================================================
 
-showScreen(
-    home
-);
-
-console.log(
-    "UNO Friends — 8 player multiplayer loaded"
-);
+window.createRoom = createRoom;
+window.joinRoom = joinRoom;
+window.startGame = startGame;
+window.leaveGame = leaveGame;
+window.copyRoomCode = copyRoomCode;
+window.drawCard = drawCard;
+window.callUno = callUno;
+window.chooseColor = chooseColor;

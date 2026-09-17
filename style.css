@@ -1072,3 +1072,338 @@ button {
         height: 76px;
     }
 }
+/* =========================================================
+   REAL UNO-STYLE PLAYER CARDS + EFFECTS
+========================================================= */
+
+/* Opponent area */
+#opponents {
+    align-items: flex-start;
+}
+
+/* Opponent player panel */
+.opp {
+    position: relative;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    min-width: 125px;
+    padding: 8px 10px 12px;
+
+    border-radius: 18px;
+}
+
+/* Player avatar */
+.opp::before {
+    content: "👤";
+
+    width: 38px;
+    height: 38px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin-bottom: 5px;
+
+    border-radius: 50%;
+
+    font-size: 22px;
+
+    background:
+        radial-gradient(circle at 35% 30%, #8ed1ff, #1769e8 70%);
+
+    border: 2px solid white;
+
+    box-shadow:
+        0 3px 10px rgba(0,0,0,.45),
+        inset 0 2px 4px rgba(255,255,255,.35);
+}
+
+/* Opponent card backs */
+.opponent-cards {
+    display: flex;
+    justify-content: center;
+
+    height: 42px;
+
+    margin-top: 5px;
+}
+
+.opponent-card {
+    width: 27px;
+    height: 39px;
+
+    margin-left: -7px;
+
+    border: 2px solid white;
+    border-radius: 5px;
+
+    background:
+        radial-gradient(
+            ellipse at center,
+            #ef2028 0%,
+            #b90810 48%,
+            #111 50%,
+            #080808 100%
+        );
+
+    box-shadow:
+        0 3px 7px rgba(0,0,0,.5);
+
+    transform: rotate(var(--rotation));
+
+    position: relative;
+}
+
+.opponent-card::after {
+    content: "UNO";
+
+    position: absolute;
+
+    left: 50%;
+    top: 50%;
+
+    transform: translate(-50%, -50%) rotate(-12deg);
+
+    font-size: 7px;
+    font-weight: 1000;
+
+    color: #ffe600;
+
+    text-shadow:
+        1px 1px #111;
+}
+
+
+/* =========================================================
+   PLAYABLE CARD POP-UP
+========================================================= */
+
+/* Any card marked playable rises up */
+.hand .card.playable {
+    transform:
+        translateY(-14px)
+        scale(1.03);
+
+    z-index: 10;
+
+    box-shadow:
+        0 0 0 2px rgba(255,255,255,.75),
+        0 0 18px rgba(255,225,50,.95),
+        0 10px 25px rgba(0,0,0,.55);
+
+    animation:
+        playableCard 1.25s ease-in-out infinite;
+}
+
+/* Keep playable card raised on hover */
+.hand .card.playable:hover {
+    transform:
+        translateY(-23px)
+        scale(1.08);
+
+    z-index: 30;
+}
+
+/* Unplayable cards stay lower */
+.hand .card.disabled {
+    transform: translateY(5px) scale(.96);
+
+    opacity: .42;
+
+    filter: saturate(.65);
+
+    box-shadow:
+        0 3px 7px rgba(0,0,0,.35);
+}
+
+.hand .card.disabled:hover {
+    transform: translateY(5px) scale(.96);
+}
+
+@keyframes playableCard {
+
+    0%,
+    100% {
+        box-shadow:
+            0 0 0 2px rgba(255,255,255,.65),
+            0 0 12px rgba(255,225,50,.65),
+            0 8px 20px rgba(0,0,0,.5);
+    }
+
+    50% {
+        box-shadow:
+            0 0 0 2px white,
+            0 0 28px rgba(255,225,50,1),
+            0 12px 28px rgba(0,0,0,.55);
+    }
+}
+
+
+/* =========================================================
+   SHINING UNO BUTTON
+========================================================= */
+
+#uno {
+    position: relative;
+
+    overflow: hidden;
+
+    background:
+        linear-gradient(
+            180deg,
+            #ff4b42 0%,
+            #e3131b 50%,
+            #a5070c 100%
+        ) !important;
+
+    border: 2px solid #ff7777;
+
+    box-shadow:
+        0 5px 0 #70060a,
+        0 0 18px rgba(255,35,35,.7),
+        0 8px 25px rgba(0,0,0,.4);
+
+    animation:
+        unoGlow 1.5s ease-in-out infinite;
+}
+
+/* Moving shine */
+#uno::before {
+    content: "";
+
+    position: absolute;
+
+    top: -70%;
+    left: -80%;
+
+    width: 45%;
+    height: 220%;
+
+    background:
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.8),
+            transparent
+        );
+
+    transform: rotate(25deg);
+
+    animation:
+        unoShine 2.3s linear infinite;
+
+    pointer-events: none;
+}
+
+#uno {
+    text-shadow:
+        2px 2px #7d0000,
+        0 0 5px white;
+}
+
+#uno:active {
+    transform: translateY(3px) scale(.98);
+}
+
+@keyframes unoShine {
+
+    0% {
+        left: -80%;
+    }
+
+    45%,
+    100% {
+        left: 150%;
+    }
+}
+
+@keyframes unoGlow {
+
+    0%,
+    100% {
+        filter: brightness(1);
+    }
+
+    50% {
+        filter: brightness(1.18);
+    }
+}
+
+
+/* =========================================================
+   CURRENT PLAYER
+========================================================= */
+
+.opp.active {
+    animation:
+        activePlayer 1.2s ease-in-out infinite;
+}
+
+@keyframes activePlayer {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-3px);
+    }
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 600px) {
+
+    .opp {
+        min-width: 105px;
+    }
+
+    .opp::before {
+        width: 32px;
+        height: 32px;
+
+        font-size: 18px;
+    }
+
+    .opponent-cards {
+        height: 35px;
+    }
+
+    .opponent-card {
+        width: 23px;
+        height: 34px;
+    }
+
+    .opponent-card::after {
+        font-size: 6px;
+    }
+
+    .hand .card.playable {
+        transform:
+            translateY(-11px)
+            scale(1.02);
+    }
+}
+
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+
+    .hand .card.playable,
+    #uno,
+    .opp.active {
+        animation: none;
+    }
+
+    #uno::before {
+        display: none;
+    }
+}
